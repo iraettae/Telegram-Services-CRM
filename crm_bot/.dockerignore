@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+bot.log
+logs/
+*.bak
+.agent/
+.agents/
+.gemini/
+*.db

@@ -1,0 +1,6 @@
+aiogram>=3.15.0
+python-dotenv
+openai>=1.0.0
+fastapi
+uvicorn
+aiohttp-socks

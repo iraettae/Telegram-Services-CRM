@@ -1,0 +1,11 @@
+pyrogram
+tgcrypto
+httpx
+python-dotenv
+aiofiles
+pandas
+openpyxl
+fastapi
+uvicorn
+websockets
+google-generativeai

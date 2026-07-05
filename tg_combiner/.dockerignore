@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+bot.log
+sessions/
+*.bak
+.agent/
+.agents/
+.gemini/
+contacts.json
+admins.json

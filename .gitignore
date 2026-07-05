@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+
+# Env variables
+.env
+.env.save
+
+# Databases
+*.sqlite3
+*.db
+crm_bot/crm_data.db
+
+# Media and User Data
+crm_bot/frontend/avatars/*
+!crm_bot/frontend/avatars/.gitkeep
+crm_bot/frontend/media/*
+!crm_bot/frontend/media/.gitkeep
+tg_combiner/sessions/*
+!tg_combiner/sessions/.gitkeep
+tg_combiner/webapp/static/avatars/*
+!tg_combiner/webapp/static/avatars/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Sensitive info
+tg_combiner/proxies.json

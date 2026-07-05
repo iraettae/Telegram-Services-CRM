@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CRM Telegram Dashboard</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        theme: {
+                            bg: '#1a1f1b',
+                            card: '#232a24',
+                            accent: '#4ade80', // bright green
+                            text: '#f3f4f6',
+                            muted: '#9ca3af',
+                            incomingBg: '#2a322c',
+                            border: '#374151'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: theme('colors.theme.bg');
+            color: theme('colors.theme.text');
+            overflow: hidden;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .message-bubble {
+            max-width: 85%;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body class="h-screen w-screen flex flex-col relative text-sm">
+
+    <!-- VIEW: LEADS -->
+    <div id="view-leads" class="absolute inset-0 flex flex-col pb-16 z-0 bg-theme-bg">
+        <!-- Header -->
+        <div class="px-5 pt-5 pb-3 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold flex items-center gap-2">
+                    CRM Dashboard
+                    <span id="active-account-badge"
+                        class="hidden bg-theme-accent/20 text-theme-accent text-xs px-2 py-0.5 rounded-full border border-theme-accent/30 cursor-pointer"
+                        onclick="filterByAccount(null)">Filtered ✕</span>
+                </h1>
+            </div>
+            <button class="text-theme-muted hover:text-white" onclick="filterByAccount(null)">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="px-5 flex gap-2 overflow-x-auto scrollbar-hide pb-2 pt-2">
+            <button id="filter-all" onclick="setFilter('all')"
+                class="whitespace-nowrap bg-theme-accent text-black px-4 py-1.5 rounded-full font-semibold transition">All
+                Chats</button>
+            <button id="filter-unread" onclick="setFilter('unread')"
+                class="whitespace-nowrap bg-theme-border/50 text-theme-muted px-4 py-1.5 rounded-full border border-theme-border hover:text-white transition">Unread</button>
+            <button id="filter-priority" onclick="setFilter('priority')"
+                class="whitespace-nowrap bg-theme-border/50 text-theme-muted px-4 py-1.5 rounded-full border border-theme-border hover:text-white transition">High
+                Priority</button>
+        </div>
+
+        <!-- Chat List -->
+        <div id="chats-list" class="flex-1 overflow-y-auto scrollbar-hide px-3 pb-4 mt-2">
+            <div class="text-center text-theme-muted text-xs mt-10">Loading chats...</div>
+        </div>
+
+        <button onclick="switchView('accounts')"
+            class="absolute bottom-20 right-5 w-14 h-14 bg-theme-accent rounded-full flex items-center justify-center text-black shadow-lg shadow-theme-accent/20 z-10 hover:scale-105 transition">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+        </button>
+    </div>
+
+    <!-- VIEW: ACCOUNTS -->
+    <div id="view-accounts" class="absolute inset-0 flex flex-col pb-16 z-0 bg-theme-bg hidden">
+        <div class="px-5 pt-5 pb-3 flex items-center gap-4">
+            <h1 class="text-lg font-bold mx-auto">Business Accounts</h1>
+        </div>
+
+        <div class="px-5 mb-4 text-theme-muted text-[13px] leading-relaxed">
+            Select an account to view its chats, or manage connected profiles.
+        </div>
+
+        <div class="px-5 flex justify-between items-center mb-4">
+            <h2 class="font-bold">Connected Accounts</h2>
+            <span class="bg-theme-card text-theme-accent text-xs px-2 py-0.5 rounded-full border border-theme-border/50"
+                id="accounts-count">0 Active</span>
+        </div>
+
+        <div id="accounts-list" class="flex-1 overflow-y-auto scrollbar-hide px-5 gap-3 flex flex-col pb-4">
+            <div class="text-center text-theme-muted text-xs mt-10">Loading accounts...</div>
+        </div>
+    </div>
+
+    <!-- VIEW: CHAT WINDOW -->
+    <div id="view-chat"
+        class="absolute inset-0 flex flex-col z-30 bg-theme-bg hidden translate-x-full transition-transform duration-300">
+        <!-- Chat Header -->
+        <div
+            class="px-2 pt-4 pb-3 flex items-center gap-3 bg-theme-bg/95 backdrop-blur-md z-10 border-b border-theme-card">
+            <button onclick="closeChat()" class="p-2 text-white hover:bg-theme-card rounded-full transition">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+            </button>
+            <div class="w-10 h-10 bg-gradient-to-tr from-gray-700 to-gray-600 rounded-full flex items-center justify-center font-bold text-white relative shrink-0"
+                id="chat-header-avatar">
+                C
+                <div
+                    class="absolute bottom-0 right-0 w-3 h-3 bg-theme-accent rounded-full border-2 border-theme-bg z-20">
+                </div>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h2 class="font-bold text-[15px] truncate" id="chat-header-name">Chat Name</h2>
+                <div class="text-xs text-theme-accent hidden" id="chat-header-status"></div>
+            </div>
+            <button id="chat-priority-btn" onclick="togglePriority()"
+                class="p-2 text-theme-muted hover:text-yellow-400 transition">
+                <!-- Star icon -->
+                <svg class="w-6 h-6" id="chat-priority-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="messages-list"
+            class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 scrollbar-hide relative bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-theme-card/30 to-theme-bg">
+            <div class="text-center text-xs text-theme-muted my-2"><span
+                    class="bg-theme-card px-3 py-1 rounded-full">Chat opened</span></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 bg-theme-bg border-t border-theme-border/50 shrink-0 mb-4 flex flex-col gap-2">
+            <!-- Media Preview Area (hidden by default) -->
+            <div id="media-preview-container"
+                class="hidden relative w-16 h-16 bg-theme-card rounded-lg border border-theme-border items-center justify-center ml-2 shrink-0">
+                <img id="media-preview-img" class="w-full h-full object-cover rounded-lg hidden">
+                <div id="media-preview-icon"
+                    class="hidden text-theme-muted flex items-center justify-center w-full h-full">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                        </path>
+                    </svg>
+                </div>
+                <button type="button" onclick="clearMediaSelection()"
+                    class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] shadow-lg hover:scale-110 z-10">&times;</button>
+            </div>
+
+            <form id="sendForm" class="flex items-center gap-2">
+                <input type="file" id="mediaInput" class="hidden" onchange="handleMediaSelect(event)">
+                <button type="button" onclick="document.getElementById('mediaInput').click()"
+                    class="w-11 h-11 bg-theme-card/80 text-theme-muted hover:text-white rounded-full flex items-center justify-center shrink-0 hover:scale-105 transition border border-theme-border/30">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13">
+                        </path>
+                    </svg>
+                </button>
+                <div
+                    class="flex-1 bg-theme-card/80 rounded-full flex items-center pr-1 pl-4 py-1 border border-theme-border/30">
+                    <input type="text" id="messageInput"
+                        class="flex-1 bg-transparent text-white border-none outline-none py-2 placeholder-theme-muted text-[15px]"
+                        placeholder="Message..." autocomplete="off">
+                </div>
+                <button type="submit" id="sendBtn"
+                    class="w-11 h-11 bg-theme-accent text-black rounded-full flex items-center justify-center shrink-0 hover:scale-105 transition shadow-[0_0_15px_rgba(74,222,128,0.3)]">
+                    <svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION BAR -->
+    <nav
+        class="fixed bottom-0 left-0 right-0 h-[68px] bg-theme-card border-t border-theme-border/40 z-20 flex justify-around items-center px-4 pb-2 pt-1 shadow-[0_-10px_20px_rgba(0,0,0,0.3)]">
+        <div onclick="switchView('leads')" id="nav-leads"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-accent transition">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                    d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2zm0 14H5.17l-.59.59-.58.58V4h16v12z" />
+                <path d="M7 9h10v2H7zM7 6h10v2H7z" />
+            </svg>
+            <span class="text-[12px] font-semibold">Leads</span>
+        </div>
+        <div onclick="switchView('accounts')" id="nav-accounts"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-white transition">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                    d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z" />
+            </svg>
+            <span class="text-[12px] font-semibold">Accounts</span>
+        </div>
+    </nav>
+
+    <!-- CORE LOGIC -->
+    <script>
+        const tg = window.Telegram?.WebApp;
+
+        if (tg) {
+            tg.expand();
+            tg.ready();
+            tg.setHeaderColor('#1a1f1b');
+            tg.setBackgroundColor('#1a1f1b');
+        }
+
+        function getAuthHeader() {
+            return 'tma ' + (tg ? tg.initData : '');
+        }
+
+        let currentChatId = null;
+        let currentBusinessConnId = null;
+        let isCurrentChatHighPriority = false;
+        let pollingInterval = null;
+
+        let allChatsData = [];
+        let currentFilter = 'all'; // all, unread, priority
+        let currentAccountFilter = null;
+
+        let lastChatsDataString = "";
+        let lastMessagesHtml = "";
+
+        function switchView(viewName) {
+            document.getElementById('view-leads').classList.add('hidden');
+            document.getElementById('view-accounts').classList.add('hidden');
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
+
+            document.getElementById('nav-leads').className = `flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer transition ${viewName === 'leads' ? 'text-theme-accent' : 'text-theme-muted hover:text-white'}`;
+            document.getElementById('nav-accounts').className = `flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer transition ${viewName === 'accounts' ? 'text-theme-accent' : 'text-theme-muted hover:text-white'}`;
+
+            if (viewName === 'leads') renderChats();
+        }
+
+        function setFilter(filterName) {
+            currentFilter = filterName;
+
+            // Update UI buttons
+            const activeClass = "whitespace-nowrap bg-theme-accent text-black px-4 py-1.5 rounded-full font-semibold transition";
+            const inactiveClass = "whitespace-nowrap bg-theme-border/50 text-theme-muted px-4 py-1.5 rounded-full border border-theme-border hover:text-white transition";
+
+            document.getElementById('filter-all').className = filterName === 'all' ? activeClass : inactiveClass;
+            document.getElementById('filter-unread').className = filterName === 'unread' ? activeClass : inactiveClass;
+            document.getElementById('filter-priority').className = filterName === 'priority' ? activeClass : inactiveClass;
+
+            renderChats();
+        }
+
+        function filterByAccount(connId) {
+            currentAccountFilter = connId;
+            const badge = document.getElementById('active-account-badge');
+            if (connId) {
+                badge.classList.remove('hidden');
+                switchView('leads');
+            } else {
+                badge.classList.add('hidden');
+            }
+            renderChats();
+        }
+
+        async function fetchAccounts() {
+            try {
+                const res = await fetch('/api/accounts', {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        document.body.innerHTML = '<div class="flex items-center justify-center h-full text-center p-5"><h1 class="text-xl font-bold text-red-400">⛔️ Ошибка доступа<br><span class="text-sm font-normal text-theme-muted mt-2 block">У вас нет прав администратора CRM.</span></h1></div>';
+                    }
+                    return;
+                }
+                const accounts = await res.json();
+                const container = document.getElementById('accounts-list');
+                document.getElementById('accounts-count').innerText = `${accounts.length} Active`;
+
+                if (accounts.length === 0) {
+                    container.innerHTML = '<div class="text-xs text-theme-muted italic text-center">No accounts connected</div>';
+                    return;
+                }
+
+                container.innerHTML = accounts.map(acc => `
+                    <div onclick="filterByAccount('${acc.id}')" class="bg-theme-card rounded-2xl p-4 border border-theme-border/50 flex items-center shadow-lg shadow-black/20 cursor-pointer hover:border-theme-accent/50 transition relative">
+                        <div class="w-12 h-12 bg-gradient-to-tr from-gray-700 to-gray-500 rounded-full flex items-center justify-center font-bold text-lg text-white mr-4 shrink-0 shadow-inner">
+                            ${acc.name.charAt(0)}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-bold text-[15px] truncate text-white mb-0.5">${acc.name}</div>
+                            <div class="text-xs text-theme-muted flex items-center gap-1">
+                                <svg class="w-3 h-3 text-theme-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                Active session
+                            </div>
+                        </div>
+                        <div class="text-xs text-theme-accent bg-theme-accent/10 px-2 py-1 rounded">View Chats</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function fetchChats(forceRender = false) {
+            try {
+                const res = await fetch('/api/chats', {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (!res.ok) return;
+                const newData = await res.json();
+                const newDataString = JSON.stringify(newData);
+                if (newDataString !== lastChatsDataString || forceRender) {
+                    allChatsData = newData;
+                    lastChatsDataString = newDataString;
+                    renderChats();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderChats() {
+            const container = document.getElementById('chats-list');
+            if (allChatsData.length === 0) {
+                container.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10">No chats found.</div>';
+                return;
+            }
+
+            let filtered = allChatsData;
+            if (currentAccountFilter) {
+                filtered = filtered.filter(c => c.business_connection_id === currentAccountFilter);
+            }
+            if (currentFilter === 'unread') {
+                filtered = filtered.filter(c => c.is_unread);
+            } else if (currentFilter === 'priority') {
+                filtered = filtered.filter(c => c.is_high_priority);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10">No chats match criteria.</div>';
+                return;
+            }
+
+            container.innerHTML = filtered.map((chat) => {
+                const time = new Date(chat.last_message_time.replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const colors = ['from-teal-500 to-emerald-500', 'from-blue-500 to-cyan-500', 'from-purple-500 to-pink-500', 'from-orange-500 to-red-500'];
+                const colorGroup = colors[chat.chat_id % colors.length];
+
+                const unreadBadge = chat.is_unread ? `<div class="bg-theme-accent text-black w-3 h-3 mt-1.5 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.8)]"></div>` : '';
+                const starBadge = chat.is_high_priority ? `<svg class="w-4 h-4 text-yellow-500 mt-1" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>` : '';
+
+                return `
+                <div onclick="openChat(${chat.chat_id}, '${chat.lead_name}', '${chat.business_connection_id}', ${chat.is_high_priority})" 
+                     class="flex items-center gap-3 p-3 mb-2 rounded-2xl bg-theme-card/30 hover:bg-theme-card/80 cursor-pointer transition border border-transparent hover:border-theme-border/30">
+                    <div class="w-12 h-12 bg-gradient-to-tr ${colorGroup} rounded-full flex items-center justify-center font-bold text-white text-lg relative shrink-0 shadow-lg">
+                        <img src="/static/avatars/${chat.chat_id}.jpg" class="absolute inset-0 w-full h-full object-cover rounded-full z-10" onerror="this.style.display='none'">
+                        <span class="z-0 relative">${chat.lead_name.charAt(0)}</span>
+                    </div>
+                    <div class="flex-1 min-w-0 flex flex-col justify-center">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-[15px] truncate text-white flex items-center gap-1">${chat.lead_name} ${starBadge}</span>
+                            <span class="text-[11px] ${chat.is_unread ? 'text-theme-accent font-bold' : 'text-theme-muted font-medium'} shrink-0 ml-2">${time}</span>
+                        </div>
+                        <div class="text-[13px] ${chat.is_unread ? 'text-gray-200 font-medium' : 'text-theme-muted'} truncate pr-2">
+                            ${chat.is_unread ? ('New: ' + (chat.last_message_text || '...')) : (chat.last_message_text || 'History is empty')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end justify-center shrink-0 w-4">
+                        ${unreadBadge}
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        async function fetchMessages(chatId) {
+            try {
+                const res = await fetch(`/api/messages/${chatId}`, {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (!res.ok) return;
+                const msgs = await res.json();
+                renderMessages(msgs);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderMessages(msgs, silent = false) {
+            const container = document.getElementById('messages-list');
+            const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+
+            if (msgs.length === 0) {
+                if (!silent) container.innerHTML = '<div class="text-center text-xs text-theme-muted mt-20 bg-theme-card px-4 py-2 rounded-full w-fit mx-auto border border-theme-border/50">History is empty</div>';
+                return;
+            }
+
+            let htmlString = '<div class="text-center text-xs text-theme-muted my-3"><span class="bg-theme-card border border-theme-border/50 px-3 py-1 rounded-full">History</span></div>';
+
+            htmlString += msgs.map(m => {
+                const time = new Date(m.timestamp.replace(' ', 'T') + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const isOut = m.is_outgoing;
+
+                const alignOuter = isOut ? 'self-end' : 'self-start flex-row';
+                const bgClass = isOut ? 'bg-theme-accent text-black font-medium shadow-[0_4px_15px_-5px_rgba(74,222,128,0.3)]' : 'bg-theme-incomingBg text-theme-text shadow-sm border border-theme-border/30';
+                const radiusObj = isOut ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm';
+                const timeColor = isOut ? 'text-black/60 font-semibold' : 'text-theme-muted';
+                const checkMarks = '';
+
+                let mediaHtml = '';
+                if (m.media_url) {
+                    if (m.media_type === 'photo') {
+                        mediaHtml = `<img src="${m.media_url}" class="max-w-full rounded-xl mb-2 object-contain" style="max-height: 250px;" />`;
+                    } else if (m.media_type === 'video') {
+                        mediaHtml = `<video src="${m.media_url}" class="max-w-full rounded-xl mb-2" style="max-height: 250px;" controls playsinline></video>`;
+                    } else if (m.media_type === 'video_note') {
+                        mediaHtml = `<video src="${m.media_url}" class="w-48 h-48 rounded-full mb-2 object-cover border-2 border-theme-accent/50 mx-auto" controls playsinline></video>`;
+                    } else if (m.media_type === 'voice' || m.media_type === 'audio') {
+                        mediaHtml = `<audio src="${m.media_url}" class="w-full mb-2 shrink-0 scale-90 origin-left" controls></audio>`;
+                    } else {
+                        mediaHtml = `<div class="mb-2 p-2 bg-black/10 rounded-lg flex items-center gap-2">
+                            <svg class="w-8 h-8 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <a href="${m.media_url}" target="_blank" class="underline text-sm font-bold truncate">Open File</a>
+                        </div>`;
+                    }
+                }
+
+                return `
+                <div class="message-bubble ${alignOuter} flex max-w-[88%] ${silent ? '' : 'animate-fade-in'} mb-1">
+                    <div class="${bgClass} ${radiusObj} py-2.5 px-3.5 relative overflow-hidden">
+                        ${mediaHtml}
+                        <div class="text-[14.5px] whitespace-pre-wrap">${m.text || ""}</div>
+                        <div class="flex items-center justify-end mt-1 gap-1">
+                            <span class="text-[10px] ${timeColor}">${time}</span>
+                            ${checkMarks}
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            if (lastMessagesHtml !== htmlString) {
+                container.innerHTML = htmlString;
+                lastMessagesHtml = htmlString;
+                if (isAtBottom) scrollToBottom();
+            }
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('messages-list');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function openChat(chatId, leadName, businessConnId, isHighPriority) {
+            currentChatId = chatId;
+            currentBusinessConnId = businessConnId;
+            isCurrentChatHighPriority = isHighPriority;
+
+            document.getElementById('chat-header-name').innerText = leadName;
+            document.getElementById('chat-header-avatar').innerHTML = `<img src="/static/avatars/${chatId}.jpg" class="absolute inset-0 w-full h-full object-cover rounded-full z-10" onerror="this.style.display='none'"><span class="z-0 relative">${leadName.charAt(0)}</span><div class="absolute bottom-0 right-0 w-3 h-3 bg-theme-accent rounded-full border-2 border-theme-bg z-20"></div>`;
+            updatePriorityIcon();
+
+            const chatView = document.getElementById('view-chat');
+            chatView.classList.remove('hidden');
+            setTimeout(() => {
+                chatView.classList.remove('translate-x-full');
+            }, 10);
+
+            if (pollingInterval) clearInterval(pollingInterval);
+            document.getElementById('messages-list').innerHTML = '<div class="text-center text-xs text-theme-muted mt-20">Loading...</div>';
+            lastMessagesHtml = "";
+
+            // Mark as read in backend
+            fetch(`/api/chats/${chatId}/read`, {
+                method: 'POST',
+                headers: { 'Authorization': getAuthHeader() }
+            }).then(() => fetchChats(true));
+
+            fetchMessages(chatId).then(() => setTimeout(scrollToBottom, 50));
+
+            pollingInterval = setInterval(() => {
+                if (currentChatId === chatId) fetchMessages(chatId, true);
+            }, 3000);
+        }
+
+        function closeChat() {
+            currentChatId = null;
+            const chatView = document.getElementById('view-chat');
+            chatView.classList.add('translate-x-full');
+            setTimeout(() => {
+                chatView.classList.add('hidden');
+            }, 300);
+            if (pollingInterval) clearInterval(pollingInterval);
+            fetchChats(true);
+        }
+
+        function updatePriorityIcon() {
+            const icon = document.getElementById('chat-priority-icon');
+            if (isCurrentChatHighPriority) {
+                icon.setAttribute("fill", "currentColor");
+                icon.classList.replace("text-theme-muted", "text-yellow-400");
+            } else {
+                icon.setAttribute("fill", "none");
+                icon.classList.replace("text-yellow-400", "text-theme-muted");
+            }
+        }
+
+        async function togglePriority() {
+            if (!currentChatId) return;
+            try {
+                const res = await fetch(`/api/chats/${currentChatId}/priority`, {
+                    method: 'POST',
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                const data = await res.json();
+                isCurrentChatHighPriority = data.is_high_priority;
+                updatePriorityIcon();
+                fetchChats(); // Update in background
+            } catch (e) { console.error(e); }
+        }
+
+        // Send Form
+        document.getElementById('sendForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text || !currentChatId) return;
+
+            if (!currentChatId || (!text && !selectedFile)) return;
+
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.innerHTML = `<div class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>`;
+
+            try {
+                if (selectedFile) {
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    formData.append('business_connection_id', currentBusinessConnId);
+
+                    await fetch(`/api/upload/${currentChatId}`, {
+                        method: 'POST',
+                        headers: { 'Authorization': getAuthHeader() },
+                        body: formData
+                    });
+                    clearMediaSelection();
+                }
+
+                if (text) {
+                    await fetch(`/api/send/${currentChatId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': getAuthHeader()
+                        },
+                        body: JSON.stringify({ business_connection_id: currentBusinessConnId, text: text })
+                    });
+                }
+
+                input.value = '';
+                fetchMessages(currentChatId).then(() => setTimeout(scrollToBottom, 50));
+                fetchChats(true);
+            } catch (err) {
+                console.error(err);
+                alert("Ошибка при отправке!");
+            } finally {
+                sendBtn.innerHTML = `<svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>`;
+            }
+        });
+
+        // Initial Data Fetch
+        fetchAccounts();
+        fetchChats();
+        setInterval(fetchChats, 5000); 
+    </script>
+</body>
+
+</html>

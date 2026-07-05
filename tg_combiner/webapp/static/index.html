@@ -1,0 +1,1781 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Combiner Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.55);
+            --glass-bg-strong: rgba(255, 255, 255, 0.72);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --glass-border-strong: rgba(255, 255, 255, 0.7);
+            --glass-blur: 16px;
+            --accent: #007AFF;
+            --accent-glow: rgba(0, 122, 255, 0.15);
+            --accent-cyan: #5AC8FA;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overscroll-behavior-y: none;
+            height: var(--tg-viewport-stable-height, 100vh);
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #f0f4ff 0%, #fce4ec 30%, #e8f5e9 60%, #fff3e0 100%);
+            background-attachment: fixed;
+            color: #1a1a2e;
+        }
+
+        /* ============ MESH GRADIENT BACKGROUND ============ */
+        .mesh-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            background: transparent;
+        }
+        .mesh-bg::before,
+        .mesh-bg::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            animation: meshFloat 12s ease-in-out infinite alternate;
+            will-change: transform;
+        }
+        .mesh-bg::before {
+            width: 60vmax;
+            height: 60vmax;
+            top: -20%;
+            left: -15%;
+            background: radial-gradient(circle, rgba(0, 122, 255, 0.15) 0%, rgba(175, 82, 222, 0.1) 50%, transparent 70%);
+        }
+        .mesh-bg::after {
+            width: 55vmax;
+            height: 55vmax;
+            bottom: -25%;
+            right: -15%;
+            background: radial-gradient(circle, rgba(52, 199, 89, 0.15) 0%, rgba(90, 200, 250, 0.1) 50%, transparent 70%);
+            animation-delay: -6s;
+        }
+        .mesh-blob-1 {
+            position: absolute;
+            width: 45vmax;
+            height: 45vmax;
+            top: 35%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(255, 149, 0, 0.15) 0%, rgba(255, 59, 48, 0.1) 50%, transparent 70%);
+            border-radius: 50%;
+            will-change: transform;
+            animation: meshFloat2 15s ease-in-out infinite alternate;
+        }
+
+        @keyframes meshFloat {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(5%, 8%) scale(1.1); }
+        }
+        @keyframes meshFloat2 {
+            0% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+            100% { transform: translate(-45%, -55%) scale(1.15) rotate(30deg); }
+        }
+
+        /* ============ GLASS MORPHISM ============ */
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+        }
+        .glass-strong {
+            background: var(--glass-bg-strong);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--glass-border-strong);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .glass-input {
+            background: rgba(255, 255, 255, 0.35);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 9999px;
+            color: #1a1a2e;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .glass-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+            outline: none;
+        }
+
+        /* ============ SCREEN TRANSITIONS ============ */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: none;
+            flex-direction: column;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .screen.active {
+            display: flex;
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 10;
+            animation: screenIn 0.22s ease-out both;
+        }
+        @keyframes screenIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============ SCROLLBAR ============ */
+        ::-webkit-scrollbar { width: 0; background: transparent; }
+
+        /* ============ BUBBLES ============ */
+        .bubble-out {
+            background: rgba(0, 122, 255, 0.1);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(0, 122, 255, 0.15);
+            color: #1a1a2e;
+            align-self: flex-end;
+            border-radius: 20px 20px 4px 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+        .bubble-in {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(0, 0, 0, 0.04);
+            color: #1a1a2e;
+            align-self: flex-start;
+            border-radius: 20px 20px 20px 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .system-pill {
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            color: #475569;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            border-radius: 9999px;
+            padding: 4px 12px;
+            margin: 16px auto;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        .break-words {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        .hidden-item {
+            display: none !important;
+        }
+
+        /* ============ NEON BUTTON ============ */
+        .btn-neon {
+            background: #007AFF;
+            color: #1a1a2e; !important;
+            font-weight: 700;
+            border: none;
+            border-radius: 9999px;
+            padding: 14px 20px;
+            font-size: 15px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.15s, box-shadow 0.3s, background 0.3s;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+        }
+        .btn-neon:active { transform: scale(0.97); }
+        
+
+        /* ============ TOGGLE SWITCH ============ */
+        .toggle-track {
+            width: 52px; height: 28px;
+            background: rgba(0, 0, 0, 0.08);
+            border-radius: 14px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s;
+            border: 1px solid transparent;
+            flex-shrink: 0;
+        }
+        .toggle-track.active {
+            background: #007AFF;
+            border-color: #007AFF;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+        }
+        .toggle-thumb {
+            width: 22px; height: 22px;
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px; left: 3px;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .toggle-track.active .toggle-thumb {
+            transform: translateX(24px);
+            background: #ffffff;
+        }
+
+        /* ============ CUSTOM RANGE SLIDER ============ */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.08);
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.3), 0 2px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(200, 200, 200, 0.8);
+            transition: box-shadow 0.2s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.4), 0 2px 8px rgba(0,0,0,0.4);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(200, 200, 200, 0.8);
+        }
+
+        /* ============ DUAL RANGE (AGE) ============ */
+        .dual-range-wrap {
+            position: relative;
+            height: 22px;
+        }
+        .dual-range-wrap input[type="range"] {
+            position: absolute;
+            width: 100%;
+            pointer-events: none;
+            background: none;
+            top: 8px;
+        }
+        .dual-range-wrap input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            pointer-events: auto;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.3), 0 2px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(200, 200, 200, 0.8);
+            transition: box-shadow 0.2s;
+        }
+        .dual-range-wrap input[type="range"]::-moz-range-thumb {
+            pointer-events: auto;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(200, 200, 200, 0.8);
+        }
+        .dual-range-track {
+            position: absolute;
+            top: 8px;
+            height: 6px;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.08);
+            border-radius: 3px;
+        }
+        .dual-range-fill {
+            position: absolute;
+            top: 8px;
+            height: 6px;
+            background: #007AFF;
+            border-radius: 3px;
+            box-shadow: none;
+        }
+
+        /* ============ SELECT ============ */
+        .glass-select {
+            background: rgba(255, 255, 255, 0.35);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 14px;
+            color: #1a1a2e;
+            padding: 12px 16px;
+            font-size: 15px;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23475569'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 20px;
+            padding-right: 40px;
+        }
+        .glass-select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+        }
+        .glass-select option {
+            background: #ffffff;
+            color: #1a1a2e;
+        }
+
+        /* ============ GLOW STATUS DOT ============ */
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #34C759;
+            box-shadow: 0 0 8px rgba(52, 199, 89, 0.6);
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+        @keyframes statusPulse {
+            0%, 100% { box-shadow: 0 0 8px rgba(52, 199, 89, 0.6); }
+            50% { box-shadow: 0 0 16px rgba(52, 199, 89, 0.9); }
+        }
+            50% { box-shadow: 0 0 16px rgba(255, 255, 255, 0.9); }
+        }
+
+        /* ============ SETTING FIELD LABEL ============ */
+        .setting-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 8px;
+        }
+        .setting-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a2e;
+            text-shadow: none;
+        }
+
+        /* ============ ANIMATIONS ============ */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeInUp 0.5s ease-out forwards;
+        }
+
+        /* ============ BOTTOM NAV ============ */
+        .bottom-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 9999px;
+            transition: all 0.3s ease;
+            color: #475569;
+            font-size: 9px;
+            font-weight: 600;
+            background: transparent;
+            border: 1px solid transparent;
+        }
+        .bottom-nav-item.active {
+            color: #007AFF;
+            background: rgba(0, 122, 255, 0.08);
+            border: 1px solid rgba(0, 122, 255, 0.12);
+            box-shadow: none;
+        }
+        .bottom-nav-item:active {
+            transform: scale(0.92);
+        }
+
+        /* ============ DM DROP ZONE ============ */
+        .dm-drop-zone {
+            background: rgba(0, 0, 0, 0.02);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px dashed rgba(0, 0, 0, 0.1);
+            border-radius: 20px;
+            padding: 28px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
+        }
+        .dm-drop-zone:hover, .dm-drop-zone.dragover {
+            border-color: rgba(0, 0, 0, 0.2);
+            background: rgba(0, 0, 0, 0.04);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+        .dm-drop-zone .icon {
+            width: 40px; height: 40px;
+            margin: 0 auto 8px;
+            opacity: 0.4;
+        }
+        .dm-drop-zone .label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #64748b;
+        }
+        .dm-drop-zone .file-name {
+            font-size: 12px;
+            color: #334155;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
+        /* ============ DM PROGRESS LOG ============ */
+        .dm-log {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            font-family: 'Inter', monospace;
+            line-height: 1.8;
+            padding: 12px 14px;
+        }
+        .dm-log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        /* ============ PROGRESS BAR ============ */
+        .dm-progress-bar {
+            height: 4px;
+            background: rgba(0, 0, 0, 0.06);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .dm-progress-fill {
+            height: 100%;
+            background: #007AFF;
+            border-radius: 2px;
+            transition: width 0.4s ease;
+            box-shadow: none;
+        }
+
+        /* ============ TEXTAREA GLASS ============ */
+        .glass-textarea {
+            background: rgba(255, 255, 255, 0.35);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 16px;
+            color: #1a1a2e;
+            padding: 14px 16px;
+            font-size: 14px;
+            resize: none;
+            width: 100%;
+            outline: none;
+            font-family: 'Inter', sans-serif;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .glass-textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+        }
+        .glass-textarea::placeholder {
+            color: #94a3b8;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ============ MESH GRADIENT BACKGROUND ============ -->
+    <div class="mesh-bg" aria-hidden="true">
+        <div class="mesh-blob-1"></div>
+    </div>
+
+    <!-- ============ SCREEN 1: SESSIONS ============ -->
+    <div id="screen-sessions" class="screen active" style="animation:none;">
+        <div class="px-6 pt-5 pb-4 flex justify-between items-center sticky top-0 z-20 glass-strong"
+            style="border-top: none; border-left: none; border-right: none; border-radius: 0;">
+            <h1 class="text-2xl font-extrabold tracking-tight">Сессии</h1>
+            <div class="flex items-center gap-2 text-xs font-semibold" style="color: #475569;">
+                <div class="status-dot"></div>
+                Подключено
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 pb-28 pt-3 space-y-3" id="sessions-container">
+            <!-- Loaded via JS -->
+            <div class="flex flex-col items-center justify-center h-40" style="color: #94a3b8;">
+                <svg class="animate-spin h-6 w-6 mb-2" style="color: #1a1a2e;" xmlns="http://www.w3.org/2000/svg"
+                    fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                <span class="text-sm font-medium">Загрузка...</span>
+            </div>
+        </div>
+
+        <div class="absolute bottom-6 left-0 right-0 px-6 z-30">
+            <button onclick="tg.showAlert('Добавьте аккаунт через главное меню бота!')"
+                class="btn-neon w-full flex items-center justify-center gap-2" style="color: #ffffff !important;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5"
+                    stroke="currentColor" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Добавить сессию
+            </button>
+        </div>
+    </div>
+
+    <!-- ============ SCREEN 2: CHATS ============ -->
+    <div id="screen-chats" class="screen">
+        <div class="px-4 py-3 flex items-center relative sticky top-0 z-20 glass-strong"
+            style="border-top: none; border-left: none; border-right: none; border-radius: 0;">
+            <button onclick="nav('sessions', 'chats')"
+                class="font-semibold flex items-center gap-1 absolute left-4 z-30"
+                style="color: #1a1a2e;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                    <path fill-rule="evenodd"
+                        d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+                        clip-rule="evenodd" />
+                </svg>
+                Сессии
+            </button>
+            <h2 id="chats-header" class="w-full text-center font-bold text-[17px]">Чаты</h2>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="px-4 pb-3 pt-1">
+            <div class="glass-input rounded-2xl flex items-center px-4 py-2.5" style="border-radius: 16px;">
+                <svg class="w-5 h-5 mr-2" style="color: #94a3b8;" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                <input type="text" id="chat-search" placeholder="Поиск"
+                    class="bg-transparent border-none text-[15px] focus:ring-0 text-[#1a1a2e] w-full p-0 m-0"
+                    style="outline:none; color: #1a1a2e;"
+                    onfocus="this.parentElement.style.borderColor='var(--accent)'; this.parentElement.style.boxShadow='0 0 20px var(--accent-glow)'"
+                    onblur="this.parentElement.style.borderColor='rgba(255,255,255,0.12)'; this.parentElement.style.boxShadow='none'">
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 pb-28 pt-2 space-y-2" id="chats-container">
+            <!-- Loaded via JS -->
+        </div>
+    </div>
+
+    <!-- ============ SCREEN 3: DIALOG ============ -->
+    <div id="screen-dialog" class="screen">
+        <!-- Header -->
+        <div class="px-4 py-2 flex items-center justify-between glass-strong sticky top-0 z-20"
+            style="border-top: none; border-left: none; border-right: none; border-radius: 0;">
+            <div class="flex-1 flex justify-start">
+                <button onclick="nav('chats', 'dialog')" class="font-semibold flex items-center gap-1"
+                    style="color: #1a1a2e;">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                        <path fill-rule="evenodd"
+                            d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    Назад
+                </button>
+            </div>
+            <div class="flex items-center gap-2 flex-col justify-center text-center px-2">
+                <div class="flex items-center gap-2.5">
+                    <div id="dialog-header-avatar-wrap" class="w-8 h-8 shrink-0">
+                        <img id="dialog-header-avatar-img" class="w-8 h-8 rounded-full object-cover" style="box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);">
+                    </div>
+                    <h2 id="dialog-header" class="font-bold text-[15px] truncate max-w-[130px]">Name</h2>
+                </div>
+                <span id="dialog-header-status" class="text-[9px] font-bold uppercase tracking-widest mt-0.5"
+                    style="color: #475569;"></span>
+            </div>
+            <div class="flex-1"></div>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="messages-container" class="flex-1 overflow-y-auto px-4 flex flex-col gap-3 h-full pb-6 pt-2">
+            <div class="system-pill">Безопасное соединение установлено</div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 glass-strong flex items-center gap-2 pb-[calc(12px+env(safe-area-inset-bottom))]"
+            style="border-left: none; border-right: none; border-bottom: none; border-radius: 0;">
+
+            <button onclick="requestAiReply()"
+                class="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-[#1a1a2e] active:scale-95 transition-transform"
+                style="background: linear-gradient(135deg, rgba(255,255,255,0.2), rgba(255,255,255,0.05)); border: 1px solid rgba(0, 0, 0, 0.06); box-shadow: 0 0 15px rgba(255,255,255,0.1);">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                    <path fill-rule="evenodd"
+                        d="M14.615 1.595a.75.75 0 01.359.852L12.982 9.75h7.268a.75.75 0 01.548 1.262l-10.5 11.25a.75.75 0 01-1.272-.71l1.992-7.302H3.75a.75.75 0 01-.548-1.262l10.5-11.25a.75.75 0 01.913-.143z"
+                        clip-rule="evenodd" />
+                </svg>
+            </button>
+
+            <div class="flex-1 glass-input rounded-full px-4 py-2 flex items-center min-h-[40px]"
+                style="border-radius: 22px;">
+                <textarea id="msg-input"
+                    class="w-full bg-transparent text-[#1a1a2e] text-[15px] border-none focus:ring-0 resize-none max-h-24 p-0 m-0 leading-relaxed"
+                    rows="1" placeholder="Ваше сообщение..."
+                    style="outline:none; box-shadow:none; color: #1a1a2e;"></textarea>
+            </div>
+
+            <button onclick="sendMessage()"
+                class="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-[#1a1a2e] active:scale-95 transition-transform"
+                style="background: #007AFF; color: white; box-shadow: 0 0 15px rgba(255,255,255,0.3);">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                    class="w-4 h-4 ml-0.5">
+                    <path
+                        d="M3.478 2.404a.75.75 0 00-.926.941l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.404z" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- ============ SCREEN 4: PARSER SETTINGS ============ -->
+    <div id="screen-parser" class="screen">
+        <div class="px-4 py-3 flex items-center relative sticky top-0 z-20 glass-strong"
+            style="border-top: none; border-left: none; border-right: none; border-radius: 0;">
+            <button onclick="nav('chats', 'parser')" class="font-semibold flex items-center gap-1 absolute left-4 z-30"
+                style="color: #1a1a2e;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                    <path fill-rule="evenodd"
+                        d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+                        clip-rule="evenodd" />
+                </svg>
+                Назад
+            </button>
+            <h2 class="w-full text-center font-bold text-[17px]">Smart Парсер</h2>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 pb-10 pt-3 space-y-4">
+
+            <!-- Header Card -->
+            <div class="glass-card rounded-[22px] p-5 text-center animate-fade-in">
+                <div class="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-3"
+                    style="background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05)); border: 1px solid rgba(0, 0, 0, 0.06); box-shadow: 0 0 30px rgba(255,255,255,0.1);">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                        class="w-7 h-7 text-[#1a1a2e]">
+                        <path fill-rule="evenodd"
+                            d="M14.615 1.595a.75.75 0 01.359.852L12.982 9.75h7.268a.75.75 0 01.548 1.262l-10.5 11.25a.75.75 0 01-1.272-.71l1.992-7.302H3.75a.75.75 0 01-.548-1.262l10.5-11.25a.75.75 0 01.913-.143z"
+                            clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold mb-1">Настройки AI-анализа</h3>
+                <p class="text-[13px]" style="color: #94a3b8;">Задайте параметры для интеллектуального
+                    парсинга и фильтрации кандидатов</p>
+            </div>
+
+            <!-- Depth Slider -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.05s;">
+                <div class="setting-label">Глубина анализа</div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-[13px]" style="color: #475569;">За последние</span>
+                    <span class="setting-value" id="depth-value">30</span>
+                    <span class="text-[13px]" style="color: #475569;">дней</span>
+                </div>
+                <input type="range" id="parser-depth" min="1" max="365" value="30"
+                    oninput="document.getElementById('depth-value').textContent = this.value">
+            </div>
+
+            <!-- City Input -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.1s;">
+                <div class="setting-label">Город</div>
+                <input type="text" id="parser-city" placeholder="Оставьте пустым для всех городов"
+                    class="glass-input w-full rounded-[14px] px-4 py-3 text-[15px]">
+            </div>
+
+            <!-- Location Strictness Toggle -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.15s;">
+                <div class="setting-label">Строгость локации</div>
+                <div class="flex items-center justify-between">
+                    <div class="flex-1 pr-4">
+                        <div class="text-[14px] font-medium" id="location-label">Вся РФ (исключить СНГ/Зарубежье)
+                        </div>
+                        <div class="text-[12px] mt-1" style="color: #94a3b8;">Строгий поиск ограничит
+                            результаты указанным городом</div>
+                    </div>
+                    <div class="toggle-track" id="toggle-location" onclick="toggleSwitch(this, 'location')">
+                        <div class="toggle-thumb"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Target Chats -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.18s;">
+                <div class="setting-label">Источники для парсинга</div>
+                <div class="flex items-center gap-2 mb-3">
+                    <input type="text" id="parser-target-input" placeholder="@username или ссылка"
+                        class="glass-input flex-1 px-4 py-2.5 text-[14px]">
+                    <button onclick="addTargetChat()" class="w-[42px] h-[42px] rounded-full bg-white/10 flex items-center justify-center active:scale-95 transition-transform border border-white/20 hover:bg-white/20">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    </button>
+                </div>
+                <div id="target-chats-container" class="flex flex-wrap gap-2">
+                    <!-- Chips here -->
+                </div>
+            </div>
+
+            <!-- Gender Select -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.2s;">
+                <div class="setting-label">Пол</div>
+                <select id="parser-gender" class="glass-select w-full">
+                    <option value="any">Любой</option>
+                    <option value="male">Мужской</option>
+                    <option value="female">Женский</option>
+                </select>
+            </div>
+
+            <!-- Age Range -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.25s;">
+                <div class="setting-label">Возраст</div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="setting-value" id="age-min-value">18</span>
+                    <span class="text-[13px] px-2" style="color: #94a3b8;">—</span>
+                    <span class="setting-value" id="age-max-value">45</span>
+                    <span class="text-[13px] ml-1" style="color: #94a3b8;">лет</span>
+                </div>
+                <div class="dual-range-wrap">
+                    <div class="dual-range-track"></div>
+                    <div class="dual-range-fill" id="age-range-fill"></div>
+                    <input type="range" id="parser-age-min" min="16" max="60" value="18"
+                        oninput="updateAgeRange()">
+                    <input type="range" id="parser-age-max" min="16" max="60" value="45"
+                        oninput="updateAgeRange()">
+                </div>
+            </div>
+
+            <!-- AI Strictness -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.26s;">
+                <div class="setting-label">Строгость ИИ-анализа</div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="setting-value" id="strictness-value">50</span>
+                    <span class="text-[13px] ml-1" style="color: #94a3b8;">/ 100</span>
+                </div>
+                <div class="text-[11px] mb-3 leading-tight" style="color: #94a3b8;">Меньше — лояльнее (пропустит больше). Больше — придирчивее (найдет меньше, но точнее).</div>
+                <div class="dual-range-wrap" style="height:4px;">
+                    <div class="dual-range-track"></div>
+                    <div class="dual-range-fill" id="strictness-fill" style="left:0; width:50%;"></div>
+                    <input type="range" id="parser-strictness" min="0" max="100" value="50" style="position:relative; width:100%; z-index:5;"
+                        oninput="document.getElementById('strictness-value').textContent = this.value; document.getElementById('strictness-fill').style.width = this.value + '%';">
+                </div>
+            </div>
+
+            <!-- Slang Match Limit -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.28s;">
+                <div class="setting-label">Курьерский сленг (авто-прием)</div>
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-[13px]" style="color: #94a3b8;">Мин. совпадений:</span>
+                    <span class="setting-value" id="slang-value">2</span>
+                </div>
+                <div class="text-[11px] mb-3 leading-tight" style="color: #94a3b8;">Сколько сленговых слов нужно найти, чтобы принять кандидата в обход ИИ (0 - отключить).</div>
+                <div class="dual-range-wrap" style="height:4px;">
+                    <div class="dual-range-track"></div>
+                    <div class="dual-range-fill" id="slang-fill" style="left:0; width:40%;"></div>
+                    <input type="range" id="parser-slang" min="0" max="5" value="2" style="position:relative; width:100%; z-index:5;"
+                        oninput="document.getElementById('slang-value').textContent = this.value; document.getElementById('slang-fill').style.width = (this.value * 20) + '%';">
+                </div>
+            </div>
+
+            <!-- Experience Toggle -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.3s;">
+                <div class="setting-label">Опыт курьера</div>
+                <div class="flex items-center justify-between">
+                    <div class="flex-1 pr-4">
+                        <div class="text-[14px] font-medium" id="experience-label">Не обязателен</div>
+                        <div class="text-[12px] mt-1" style="color: #94a3b8;">Показывать только
+                            кандидатов с опытом доставки</div>
+                    </div>
+                    <div class="toggle-track" id="toggle-experience" onclick="toggleSwitch(this, 'experience')">
+                        <div class="toggle-thumb"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Prompt -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.32s;">
+                <div class="flex items-center justify-between cursor-pointer" onclick="document.getElementById('custom-prompt-wrap').classList.toggle('hidden')">
+                    <div class="setting-label" style="margin-bottom:0;">Свой Промпт ИИ (Опционально)</div>
+                    <svg class="w-4 h-4 text-[#1a1a2e] opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+                <div id="custom-prompt-wrap" class="hidden mt-3">
+                    <div class="text-[11px] mb-2 leading-tight" style="color: #94a3b8;">
+                        Здесь можно дописать свои строгие правила для ИИ. Например: "Игнорируй профили без имени" или "Если упоминает 'Яндекс' - сразу бери".
+                    </div>
+                    <textarea id="parser-custom-prompt" rows="3" class="w-full glass-input p-3 text-[13px] rounded-xl resize-none" placeholder="Дополнительные инструкции..." style="border-radius:12px;"></textarea>
+                </div>
+            </div>
+
+            <!-- Save Button -->
+            <div class="pt-2 pb-6 animate-fade-in" style="animation-delay: 0.35s;">
+                <button onclick="saveParserSettings()" class="btn-neon w-full flex items-center justify-center gap-2" style="color: #ffffff !important;">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                        <path fill-rule="evenodd"
+                            d="M19.916 4.626a.75.75 0 01.208 1.04l-9 13.5a.75.75 0 01-1.154.114l-6-6a.75.75 0 011.06-1.06l5.353 5.353 8.493-12.739a.75.75 0 011.04-.208z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    Запустить парсер / Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ SCREEN 5: DIRECT MESSAGE SENDER ============ -->
+    <div id="screen-dm" class="screen">
+        <div class="px-4 py-3 flex items-center relative sticky top-0 z-20 glass-strong"
+            style="border-top: none; border-left: none; border-right: none; border-radius: 0;">
+            <button onclick="nav('chats', 'dm')" class="font-semibold flex items-center gap-1 absolute left-4 z-30"
+                style="color: #1a1a2e;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                    <path fill-rule="evenodd"
+                        d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+                        clip-rule="evenodd" />
+                </svg>
+                Назад
+            </button>
+            <h2 class="w-full text-center font-bold text-[17px]">Прямая рассылка</h2>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 pb-10 pt-3 space-y-4">
+
+            <!-- Header Card -->
+            <div class="glass-card rounded-[22px] p-5 text-center animate-fade-in">
+                <div class="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-3"
+                    style="background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05)); border: 1px solid rgba(0, 0, 0, 0.06); box-shadow: 0 0 30px rgba(255,255,255,0.1);">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 text-[#1a1a2e]">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold mb-1">Direct Message Sender</h3>
+                <p class="text-[13px]" style="color: #94a3b8;">Отправляйте сообщения, фото, видео и файлы
+                    напрямую списку пользователей</p>
+            </div>
+
+            <!-- Session Selector -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.05s;">
+                <div class="setting-label">Аккаунт для отправки</div>
+                <select id="dm-session" class="glass-select w-full">
+                    <option value="">Выберите сессию…</option>
+                </select>
+            </div>
+
+            <!-- Recipients -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.1s;">
+                <div class="setting-label">Получатели</div>
+                <textarea id="dm-recipients" class="glass-textarea" rows="4"
+                    placeholder="@username1&#10;@username2&#10;123456789&#10;Один получатель на строку…"></textarea>
+                <div class="flex items-center justify-between mt-2">
+                    <span class="text-[11px]" style="color: #94a3b8;">@username или числовой ID</span>
+                    <span class="text-[11px] font-semibold" style="color: #475569;" id="dm-recipients-count">0 получателей</span>
+                </div>
+            </div>
+
+            <!-- Message Text -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.15s;">
+                <div class="setting-label">Текст сообщения</div>
+                <textarea id="dm-text" class="glass-textarea" rows="4"
+                    placeholder="Введите текст сообщения…"></textarea>
+            </div>
+
+            <!-- Media Drop Zone -->
+            <div class="glass-card rounded-[20px] p-5 animate-fade-in" style="animation-delay: 0.2s;">
+                <div class="setting-label">Медиа файл (опционально)</div>
+                <div class="dm-drop-zone" id="dm-dropzone">
+                    <input type="file" id="dm-file-input" class="hidden"
+                        accept="image/*,video/*,audio/*,.ogg,.mp3,.wav,.pdf,.doc,.docx,.zip,.rar">
+                    <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <div class="label">Нажмите или перетащите файл сюда</div>
+                    <div class="text-[11px] mt-1" style="color: #94a3b8;">Фото, видео, голосовое (.ogg), документы</div>
+                    <div class="file-name hidden" id="dm-file-name"></div>
+                </div>
+            </div>
+
+            <!-- Send Button -->
+            <div class="pt-2 animate-fade-in" style="animation-delay: 0.25s;">
+                <button onclick="startDirectSend()" id="dm-send-btn" class="btn-neon w-full flex items-center justify-center gap-2" style="color: #ffffff !important;">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5" id="dm-send-icon">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                    <svg class="animate-spin w-5 h-5 hidden" id="dm-send-spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span id="dm-send-label">Запустить рассылку</span>
+                </button>
+            </div>
+
+            <!-- Progress Area -->
+            <div id="dm-progress-area" class="hidden">
+                <div class="glass-card rounded-[20px] p-5 animate-fade-in">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="setting-label" style="margin-bottom: 0;">Прогресс</div>
+                        <span class="text-[13px] font-bold" id="dm-progress-counter" style="color: #334155;">0 / 0</span>
+                    </div>
+                    <div class="dm-progress-bar mb-3">
+                        <div class="dm-progress-fill" id="dm-progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="flex items-center gap-4 mb-3">
+                        <span class="text-[12px] font-semibold" style="color: #475569;">✅ <span id="dm-sent-count">0</span></span>
+                        <span class="text-[12px] font-semibold" style="color: #475569;">❌ <span id="dm-failed-count">0</span></span>
+                    </div>
+                    <div class="dm-log glass" style="border-radius: 14px;" id="dm-log"></div>
+                </div>
+            </div>
+
+            <div class="pb-6"></div>
+        </div>
+    </div>
+
+    <!-- ============ SCREEN 6: CONTACTS ============ -->
+    <div id="screen-contacts" class="screen">
+        <div class="px-4 py-3 flex items-center relative sticky top-0 z-20 glass-strong"
+            style="border-top: none; border-left: none; border-right: none; border-radius: 0;">
+            <button onclick="nav('chats', 'contacts')"
+                class="font-semibold flex items-center gap-1 absolute left-4 z-30" style="color: #1a1a2e;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                    <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
+                </svg>
+                Назад
+            </button>
+            <h2 class="w-full text-center font-bold text-[17px]">Контакты</h2>
+        </div>
+
+        <!-- Sort Select -->
+        <div class="px-4 pt-4 pb-2">
+            <select id="contacts-sort" class="glass-select w-full" onchange="renderContactsList()">
+                <option value="confidence_desc">Сначала 100% подходящие</option>
+                <option value="newest">Сначала новые</option>
+                <option value="doubtful">Сначала сомнительные</option>
+            </select>
+        </div>
+
+        <div class="flex-1 overflow-y-auto pb-10" id="contacts-container">
+            <div class="flex flex-col items-center justify-center h-40" style="color: #94a3b8;">
+                <span class="text-sm font-medium">Загрузка...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ GLOBAL BOTTOM NAV ============ -->
+    <div id="global-bottom-nav" class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-[400px] z-[100]" style="display:none;">
+        <div class="glass flex justify-around items-center py-2 px-2 rounded-full shadow-lg"
+            style="backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); background: rgba(255, 255, 255, 0.85);">
+            <div class="bottom-nav-item" onclick="nav('contacts')">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                    </path>
+                </svg>
+                <span>Контакты</span>
+            </div>
+            <div class="bottom-nav-item active" onclick="nav('chats')">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd"
+                        d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z"
+                        clip-rule="evenodd"></path>
+                </svg>
+                <span>Чаты</span>
+            </div>
+            <div class="bottom-nav-item" onclick="nav('dm')">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                    </path>
+                </svg>
+                <span>Рассылка</span>
+            </div>
+            <div class="bottom-nav-item" onclick="nav('parser')">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                    </path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z">
+                    </path>
+                </svg>
+                <span>Парсер</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ AI LOADER FLOATING ============ -->
+    <div id="ai-loader"
+        class="hidden-item absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 glass-card px-6 py-4 rounded-2xl flex flex-col items-center"
+        style="box-shadow: 0 0 40px var(--accent-glow);">
+        <div class="flex space-x-2">
+            <div class="w-2.5 h-2.5 rounded-full animate-bounce"
+                style="background: rgba(255,255,255,0.8); animation-delay: 0s;"></div>
+            <div class="w-2.5 h-2.5 rounded-full animate-bounce"
+                style="background: rgba(255,255,255,0.5); animation-delay: 0.15s;"></div>
+            <div class="w-2.5 h-2.5 rounded-full animate-bounce"
+                style="background: rgba(255,255,255,0.2); animation-delay: 0.3s;"></div>
+        </div>
+        <div class="text-[10px] mt-2 font-semibold uppercase tracking-wider"
+            style="color: #475569;">Нейросеть печатает</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        document.documentElement.style.height = '100%';
+
+        let ws;
+        let currentSession = null;
+        let currentChatId = null;
+        let chatListRaw = []; // Store raw chats for local search
+        let sessionsListRaw = []; // Store raw sessions for DM dropdown
+
+        const msgInput = document.getElementById('msg-input');
+        msgInput.addEventListener('input', function () {
+            this.style.height = 'auto';
+            let newHeight = Math.min(this.scrollHeight, 100);
+            this.style.height = newHeight + 'px';
+        });
+
+        // Search handler
+        document.getElementById('chat-search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = chatListRaw.filter(c => {
+                const nameMatch = c.name.toLowerCase().includes(query);
+                const unameMatch = c.username && c.username.toLowerCase().includes(query);
+                return nameMatch || unameMatch;
+            });
+            renderChats(filtered, true);
+        });
+
+        const colors = [
+            'from-blue-400 to-blue-600', 'from-green-400 to-green-600',
+            'from-orange-400 to-orange-600', 'from-purple-400 to-purple-600',
+            'from-pink-400 to-pink-600', 'from-teal-400 to-teal-600'
+        ];
+
+        function getAvatarInitials(name) {
+            return (name || "U").substring(0, 2).toUpperCase();
+        }
+
+        function getColorGrad(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            return colors[Math.abs(hash) % colors.length];
+        }
+
+        function connectWs() {
+            const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+            const wsUrl = `${protocol}//${location.host}/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                // Read auth_token from URL (embedded by bot for Menu Button auth)
+                const urlParams = new URLSearchParams(window.location.search);
+                const authToken = urlParams.get('auth_token') || '';
+                
+                const initData = tg.initData;
+                if (initData) {
+                    // Normal flow: Telegram provided initData (inline button)
+                    ws.send(JSON.stringify({ action: "auth", initData: initData }));
+                } else if (authToken) {
+                    // Menu Button flow: use HMAC token from URL
+                    console.log('[TG Auth] Using auth_token from URL');
+                    ws.send(JSON.stringify({ action: "auth", initData: "", auth_token: authToken }));
+                } else {
+                    // No auth available — wait briefly and retry once
+                    setTimeout(() => {
+                        const retryData = tg.initData;
+                        if (retryData) {
+                            ws.send(JSON.stringify({ action: "auth", initData: retryData }));
+                        } else {
+                            ws.send(JSON.stringify({ action: "auth", initData: "", auth_token: authToken }));
+                        }
+                    }, 1000);
+                }
+            };
+
+            ws.onmessage = (event) => {
+                const payload = JSON.parse(event.data);
+                if (payload.type === "auth_failed") {
+                    tg.showAlert("Доступ запрещен. Вы не администратор.");
+                } else if (payload.type === "sessions_list") {
+                    renderSessions(payload.data);
+                } else if (payload.type === "chats_list") {
+                    chatListRaw = payload.data;
+                    renderChats(payload.data);
+                } else if (payload.type === "history_loaded") {
+                    renderHistory(payload.data);
+                    // Update dialog header status
+                    const statusEl = document.getElementById('dialog-header-status');
+                    if (payload.user_status) {
+                        statusEl.textContent = payload.user_status;
+                        statusEl.style.color = payload.user_status === 'В сети' ? '#fff' : 'rgba(255,255,255,0.45)';
+                        statusEl.style.textShadow = payload.user_status === 'В сети' ? '0 0 8px rgba(255,255,255,0.5)' : 'none';
+                    } else {
+                        statusEl.textContent = '';
+                    }
+                } else if (payload.type === "ai_reply") {
+                    document.getElementById('ai-loader').classList.add('hidden-item');
+                    msgInput.value = payload.text;
+                    msgInput.dispatchEvent(new Event('input'));
+                } else if (payload.type === "message_sent") {
+                    msgInput.value = "";
+                    msgInput.dispatchEvent(new Event('input'));
+                } else if (payload.type === "new_message") {
+                    if (currentSession === payload.session && currentChatId == payload.chat_id) {
+                        appendMessageBubble(payload.data);
+                    }
+                } else if (payload.type === "dm_progress" && payload.task_id === dmTaskId) {
+                    handleDmProgress(payload);
+                } else if (payload.type === "dm_complete" && payload.task_id === dmTaskId) {
+                    handleDmComplete(payload);
+                }
+            };
+
+            ws.onclose = () => setTimeout(connectWs, 2000);
+        }
+
+        function renderSessions(sessions) {
+            sessionsListRaw = sessions; // Store for DM dropdown
+            const container = document.getElementById('sessions-container');
+            container.innerHTML = "";
+
+            if (sessions.length === 0) {
+                container.innerHTML = `<div class="text-center mt-10 p-6" style="color: #94a3b8;">Нет сессий.</div>`;
+                return;
+            }
+
+            sessions.forEach((s, idx) => {
+                const isActive = !s.status.includes("Спит");
+                const statusStr = isActive ? 'ACTIVE' : 'IDLE';
+                const grad = getColorGrad(s.name);
+                const initials = getAvatarInitials(s.name);
+                const statusColor = isActive ? '#ffffff' : 'rgba(255,255,255,0.3)';
+
+                const el = document.createElement('div');
+                el.className = `glass-card rounded-[20px] p-4 flex items-center cursor-pointer active:scale-[0.98] transition-transform animate-fade-in`;
+                el.style.animationDelay = `${idx * 0.05}s`;
+
+                el.onclick = () => {
+                    if (!isActive) { tg.showAlert("Эта сессия сейчас оффлайн."); return; }
+                    currentSession = s.name;
+                    ws.send(JSON.stringify({ action: "load_chats", session_name: currentSession }));
+                    nav('chats', 'sessions');
+                };
+
+                el.innerHTML = `
+                    <div class="relative w-[46px] h-[46px] rounded-[16px] bg-gradient-to-br ${grad} flex items-center justify-center text-white font-bold text-lg mr-4 shrink-0"
+                        style="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);">
+                        ${initials}
+                        <div class="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full"
+                            style="background: ${statusColor}; border: 2px solid rgba(10,10,26,0.8); ${isActive ? 'box-shadow: 0 0 8px rgba(255,255,255,0.6);' : ''}"></div>
+                    </div>
+                    <div class="flex-1 min-w-0 pr-2">
+                        <div class="font-bold text-[16px] leading-tight truncate">${s.name}</div>
+                        <div class="text-[13px] mt-0.5 truncate tracking-tight" style="color: #94a3b8;">System Account @${s.name}</div>
+                    </div>
+                    <div class="text-right flex flex-col justify-center items-end ml-1">
+                        <div class="text-[10px] font-bold tracking-wider" style="color: ${statusColor}">${statusStr}</div>
+                        <svg class="w-4 h-4 mt-1" style="color: #94a3b8;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        function renderChats(chats, isFilter = false) {
+            const container = document.getElementById('chats-container');
+            container.innerHTML = "";
+
+            if (chats.length === 0) {
+                container.innerHTML = `<div class="text-center mt-10 p-6" style="color: #94a3b8;">Нет диалогов.</div>`;
+                return;
+            }
+
+            chats.forEach((c, idx) => {
+                const grad = getColorGrad(c.name);
+                const initials = c.initials || getAvatarInitials(c.name);
+
+                const el = document.createElement('div');
+                el.className = `glass-card rounded-2xl p-4 flex items-center cursor-pointer active:scale-[0.98] transition-transform animate-fade-in`;
+                el.style.animationDelay = `${idx * 0.04}s`;
+
+                el.onclick = () => {
+                    currentChatId = c.id;
+                    document.getElementById('dialog-header').innerText = c.name;
+                    // Set avatar in dialog header
+                    const avatarImg = document.getElementById('dialog-header-avatar-img');
+                    avatarImg.src = `/api/avatar/${currentSession}/${c.id}`;
+                    avatarImg.onerror = () => { avatarImg.removeAttribute('src'); };
+                    
+                    // Reset status until loaded
+                    document.getElementById('dialog-header-status').textContent = '';
+
+                    document.getElementById('messages-container').innerHTML = '<div class="text-center opacity-50 text-sm mt-10" style="color: #94a3b8;">Loading diagnostic payload...</div>';
+                    ws.send(JSON.stringify({ action: "load_history", session_name: currentSession, chat_id: currentChatId }));
+                    nav('dialog', 'chats');
+                };
+
+                const unreadBadge = c.unread_count > 0
+                    ? `<div class="text-[11px] font-bold px-2 min-w-[22px] h-[22px] rounded-full flex items-center justify-center"
+                        style="background: #007AFF; color: white; box-shadow: 0 0 12px rgba(255,255,255,0.35);">${c.unread_count}</div>`
+                    : '';
+
+                const usernameDisplay = c.username
+                    ? `<div class="text-[13px] truncate" style="color: #94a3b8;">${c.username}</div>`
+                    : `<div class="text-[13px] truncate" style="color: #94a3b8;">Скрытый профиль</div>`;
+
+                const lastMsgPreview = `<div class="text-[12px] truncate mt-0.5" style="color: #94a3b8;">${c.last_msg}</div>`;
+
+                // Avatar: real photo or gradient initials
+                let avatarHtml;
+                if (c.has_photo) {
+                    avatarHtml = `
+                        <div class="w-12 h-12 rounded-full mr-4 shrink-0 relative" style="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);">
+                            <img src="/api/avatar/${currentSession}/${c.id}" class="w-12 h-12 rounded-full object-cover"
+                                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="w-12 h-12 rounded-full bg-gradient-to-br ${grad} items-center justify-center text-white font-bold text-lg absolute inset-0" style="display:none;">
+                                ${initials}
+                            </div>
+                        </div>`;
+                } else {
+                    avatarHtml = `
+                        <div class="w-12 h-12 rounded-full bg-gradient-to-br ${grad} flex items-center justify-center text-white font-bold text-lg mr-4 shrink-0"
+                            style="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);, inset 0 1px 0 rgba(255,255,255,0.2);">
+                            ${initials}
+                        </div>`;
+                }
+
+                el.innerHTML = `
+                    ${avatarHtml}
+                    <div class="flex-1 min-w-0 pr-2">
+                        <div class="font-semibold text-[#1a1a2e] text-[15px] truncate leading-tight">${c.name}</div>
+                        ${usernameDisplay}
+                        ${lastMsgPreview}
+                    </div>
+                    <div class="shrink-0 flex flex-col items-end gap-1.5">
+                        ${unreadBadge}
+                    </div>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        function appendMessageBubble(m, container) {
+            container = container || document.getElementById('messages-container');
+            const el = document.createElement('div');
+            el.className = `max-w-[85%] px-4 py-2.5 text-[15px] leading-relaxed break-words ${m.out ? 'bubble-out' : 'bubble-in'}`;
+
+            const safeText = String(m.text || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+            el.innerHTML = `<div>${safeText}</div>`;
+
+            container.appendChild(el);
+            setTimeout(() => container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' }), 50);
+        }
+
+        function renderHistory(msgs) {
+            const container = document.getElementById('messages-container');
+            container.innerHTML = '<div class="system-pill">Secure Connection Established</div>';
+            msgs.forEach(m => appendMessageBubble(m, container));
+        }
+
+        function requestAiReply() {
+            document.getElementById('ai-loader').classList.remove('hidden-item');
+            const container = document.getElementById('messages-container');
+            const msgs = Array.from(container.children).slice(-6).map(b => b.innerText).join(" \\n ");
+            ws.send(JSON.stringify({ action: "generate_reply", history_context: msgs }));
+        }
+
+        function sendMessage() {
+            const text = msgInput.value.trim();
+            if (!text) return;
+            ws.send(JSON.stringify({ action: "send_message", session_name: currentSession, chat_id: currentChatId, text: text }));
+            appendMessageBubble({ text: text, out: true });
+            msgInput.value = '';
+            msgInput.dispatchEvent(new Event('input'));
+        }
+
+        msgInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+
+        let currentScreen = 'sessions';
+
+        function nav(targetId, fromId) {
+            fromId = fromId || currentScreen;
+            const targetScreen = document.getElementById(`screen-${targetId}`);
+            if (fromId && fromId !== targetId) {
+                const fromScreen = document.getElementById(`screen-${fromId}`);
+                if (fromScreen) fromScreen.classList.remove('active');
+            }
+            // Populate data before showing
+            if (targetId === 'dm') { populateDmSessions(); }
+            if (targetId === 'contacts') { loadContacts(); }
+            // Re-trigger CSS animation
+            targetScreen.classList.remove('active');
+            void targetScreen.offsetWidth;
+            targetScreen.classList.add('active');
+
+            currentScreen = targetId;
+
+            // Show/hide global bottom nav
+            const navScreens = ['chats', 'contacts', 'dm', 'parser'];
+            const bottomNav = document.getElementById('global-bottom-nav');
+            if (navScreens.includes(targetId)) {
+                bottomNav.style.display = '';
+                updateBottomNavActive(targetId);
+            } else {
+                bottomNav.style.display = 'none';
+            }
+        }
+
+        function updateBottomNavActive(activeId) {
+            const mapping = { contacts: 0, chats: 1, dm: 2, parser: 3 };
+            const nav = document.getElementById('global-bottom-nav');
+            const items = nav.querySelectorAll('.bottom-nav-item');
+            items.forEach((el, i) => {
+                if (i === mapping[activeId]) {
+                    el.classList.add('active');
+                } else {
+                    el.classList.remove('active');
+                }
+            });
+        }
+
+        /* ============ CONTACTS JS LOGIC ============ */
+        let allContacts = [];
+
+        async function loadContacts() {
+            try {
+                const resp = await fetch('/api/contacts');
+                const data = await resp.json();
+                allContacts = data.contacts || [];
+                renderContactsList();
+            } catch (err) {
+                console.error("Error loading contacts:", err);
+            }
+        }
+
+        function renderContactsList() {
+            const container = document.getElementById('contacts-container');
+            container.innerHTML = "";
+
+            if (allContacts.length === 0) {
+                container.innerHTML = `<div class="text-center mt-10 p-6" style="color: #94a3b8;">База контактов пуста.</div>`;
+                return;
+            }
+
+            const sortVal = document.getElementById('contacts-sort').value;
+            let sorted = [...allContacts];
+            if (sortVal === "confidence_desc") {
+                sorted.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+            } else if (sortVal === "newest") {
+                sorted.sort((a, b) => new Date(b.parsed_at || 0) - new Date(a.parsed_at || 0));
+            } else if (sortVal === "doubtful") {
+                sorted.sort((a, b) => (a.confidence || 0) - (b.confidence || 0));
+            }
+
+            sorted.forEach(c => {
+                const nameStr = c.display_name || c.name || "Unknown";
+                const grad = getColorGrad(nameStr);
+                const initials = getAvatarInitials(nameStr);
+
+                let avatarHtml = `<div class="w-[46px] h-[46px] rounded-full bg-gradient-to-br ${grad} flex items-center justify-center text-white font-semibold text-[18px] shrink-0" style="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);">${initials}</div>`;
+                if (c.avatar_url) {
+                    avatarHtml = `<img src="${c.avatar_url}" class="w-[46px] h-[46px] rounded-full object-cover shrink-0" style="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);" onerror="this.outerHTML='<div class=\\'w-[46px] h-[46px] rounded-full bg-gradient-to-br ${grad} flex items-center justify-center text-white font-semibold text-[18px] shrink-0\\' style=\\'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);\\'>${initials}</div>'" />`;
+                }
+
+                let badgeColor = "from-red-500 to-red-600";
+                const conf = c.confidence || 0;
+                if (conf >= 80) badgeColor = "from-emerald-400 to-emerald-600";
+                else if (conf >= 50) badgeColor = "from-amber-400 to-amber-600";
+
+                const badge = `<div class="px-2 py-1 rounded-full bg-gradient-to-r ${badgeColor} text-[11px] font-bold text-[#1a1a2e] shadow-md shadow-black/5">${conf}%</div>`;
+
+                const usernameHtml = c.username ? `<a href="https://t.me/${c.username}" target="_blank" class="text-[13px]" style="color: #FF6B00; text-decoration: none; font-weight: 600;">@${c.username}</a>` : '<span class="text-[13px]" style="color: #94a3b8;">Нет username</span>';
+                const sourceHtml = c.source ? `<span class="text-[11px]" style="color: #7c3aed; font-weight: 500;">📡 ${c.source}</span>` : '';
+                const lastMsgDateHtml = c.last_message_date ? `<span class="text-[11px]" style="color: #94a3b8;">📅 ${new Date(c.last_message_date).toLocaleDateString('ru-RU')}</span>` : '';
+                const metaHtml = (sourceHtml || lastMsgDateHtml) ? `<div class="flex gap-3 mt-0.5">${sourceHtml}${lastMsgDateHtml}</div>` : '';
+                
+                const reasonHtml = c.reason ? `<div class="mt-2 text-[12px] leading-snug" style="color: #475569;"><span class="font-medium text-[#1a1a2e]/80">Причина:</span> ${c.reason}</div>` : '';
+                const detailsHtml = (c.inferred_age || c.inferred_city) ? `<div class="mt-1 text-[11px] font-medium tracking-wide flex gap-2" style="color: #94a3b8;">${c.inferred_age ? `<span>Возраст: ~${c.inferred_age}</span>` : ''}${c.inferred_city ? `<span>Город: ${c.inferred_city}</span>` : ''}</div>` : '';
+
+                const el = document.createElement('div');
+                el.className = "flex flex-col px-5 py-4 border-b border-white/5";
+                
+                el.innerHTML = `
+                    <div class="flex items-center w-full">
+                        ${avatarHtml}
+                        <div class="flex-1 min-w-0 pr-3 pl-4">
+                            <div class="font-semibold text-[#1a1a2e] text-[15px] truncate tracking-tight mb-0.5">${nameStr}</div>
+                            ${usernameHtml}
+                            ${metaHtml}
+                        </div>
+                        <div class="shrink-0 self-start">
+                            ${badge}
+                        </div>
+                    </div>
+                    ${reasonHtml}
+                    ${detailsHtml}
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        /* ============ PARSER SETTINGS LOGIC ============ */
+
+        const toggleStates = {
+            location: false,
+            experience: false
+        };
+
+        let targetChats = [];
+
+        function addTargetChat() {
+            const input = document.getElementById('parser-target-input');
+            let val = input.value.trim();
+            if (!val) return;
+            
+            // Extract username or format link
+            for (let p of ["https://t.me/", "http://t.me/", "t.me/", "@"]) {
+                if (val.startsWith(p)) {
+                    val = val.substring(p.length);
+                    break;
+                }
+            }
+            val = val.replace(/\/$/, "");
+            if (!val) return;
+            
+            if (targetChats.includes(val)) {
+                input.value = '';
+                return;
+            }
+            
+            targetChats.push(val);
+            input.value = '';
+            renderTargetChats();
+        }
+
+        function removeTargetChat(idx) {
+            targetChats.splice(idx, 1);
+            renderTargetChats();
+        }
+
+        function renderTargetChats() {
+            const container = document.getElementById('target-chats-container');
+            container.innerHTML = '';
+            targetChats.forEach((chat, i) => {
+                const el = document.createElement('div');
+                el.className = 'px-3 py-1.5 rounded-full bg-white/10 flex items-center gap-2 text-[13px] border border-white/20 shadow-sm';
+                el.innerHTML = `
+                    <span>@${chat}</span>
+                    <button onclick="removeTargetChat(${i})" class="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center active:bg-red-500 transition-colors ml-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        // Add chat on Enter key
+        document.getElementById('parser-target-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTargetChat();
+            }
+        });
+
+        function toggleSwitch(el, key) {
+            toggleStates[key] = !toggleStates[key];
+            if (toggleStates[key]) {
+                el.classList.add('active');
+            } else {
+                el.classList.remove('active');
+            }
+            // Update labels
+            if (key === 'location') {
+                document.getElementById('location-label').textContent =
+                    toggleStates[key] ? 'Строгий поиск по городу' : 'Вся РФ (исключить СНГ/Зарубежье)';
+            }
+            if (key === 'experience') {
+                document.getElementById('experience-label').textContent =
+                    toggleStates[key] ? 'Обязателен опыт' : 'Не обязателен';
+            }
+        }
+
+        function updateAgeRange() {
+            let minVal = parseInt(document.getElementById('parser-age-min').value);
+            let maxVal = parseInt(document.getElementById('parser-age-max').value);
+
+            if (minVal > maxVal) {
+                // Swap
+                const tmp = minVal;
+                document.getElementById('parser-age-min').value = maxVal;
+                document.getElementById('parser-age-max').value = tmp;
+                minVal = maxVal;
+                maxVal = tmp;
+            }
+
+            document.getElementById('age-min-value').textContent = minVal;
+            document.getElementById('age-max-value').textContent = maxVal;
+
+            // Update fill bar
+            const range = 60 - 16;
+            const leftPct = ((minVal - 16) / range) * 100;
+            const rightPct = ((maxVal - 16) / range) * 100;
+            const fill = document.getElementById('age-range-fill');
+            fill.style.left = leftPct + '%';
+            fill.style.width = (rightPct - leftPct) + '%';
+        }
+
+        // Init age range fill
+        updateAgeRange();
+
+        async function saveParserSettings() {
+            const settings = {
+                target_chats: targetChats,
+                depth_days: parseInt(document.getElementById('parser-depth').value),
+                city: document.getElementById('parser-city').value.trim(),
+                strict_location: toggleStates.location,
+                gender: document.getElementById('parser-gender').value,
+                age_min: parseInt(document.getElementById('parser-age-min').value),
+                age_max: parseInt(document.getElementById('parser-age-max').value),
+                require_experience: toggleStates.experience,
+                strictness: parseInt(document.getElementById('parser-strictness').value),
+                slang_threshold: parseInt(document.getElementById('parser-slang').value),
+                custom_prompt: document.getElementById('parser-custom-prompt').value.trim()
+            };
+
+            if (targetChats.length === 0) {
+                tg.showAlert('⚠️ Добавьте хотя бы один источник (чат) для парсинга!');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/start-parser', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                
+                const data = await response.json();
+                if (data.status === 'ok') {
+                    tg.showAlert('✅ Парсер успешно запущен в фоне!\nОтчет придет администратору бота.');
+                } else {
+                    tg.showAlert('❌ Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            } catch (err) {
+                tg.showAlert('❌ Ошибка сети: ' + err.message);
+            }
+        }
+
+        connectWs();
+
+        /* ============ DIRECT MESSAGE SENDER LOGIC ============ */
+
+        let dmFile = null;
+        let dmTaskId = null;
+        let dmSending = false;
+
+        // Recipients counter
+        document.getElementById('dm-recipients').addEventListener('input', function() {
+            const lines = this.value.split('\n').filter(l => l.trim());
+            document.getElementById('dm-recipients-count').textContent = lines.length + ' получателей';
+        });
+
+        // Drop zone interactions
+        const dropZone = document.getElementById('dm-dropzone');
+        const fileInput = document.getElementById('dm-file-input');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                dmFile = e.target.files[0];
+                showFileName(dmFile.name);
+            }
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                dmFile = e.dataTransfer.files[0];
+                fileInput.files = e.dataTransfer.files;
+                showFileName(dmFile.name);
+            }
+        });
+
+        function showFileName(name) {
+            const el = document.getElementById('dm-file-name');
+            el.textContent = '📎 ' + name;
+            el.classList.remove('hidden');
+        }
+
+        function populateDmSessions() {
+            const select = document.getElementById('dm-session');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">Выберите сессию…</option>';
+            sessionsListRaw.forEach(s => {
+                const isActive = !s.status.includes('Спит');
+                if (isActive) {
+                    const opt = document.createElement('option');
+                    opt.value = s.name;
+                    opt.textContent = '🟢 ' + s.name;
+                    select.appendChild(opt);
+                }
+            });
+            if (currentVal) select.value = currentVal;
+        }
+
+
+        function handleDmProgress(p) {
+            const pct = Math.round((p.index / p.total) * 100);
+            document.getElementById('dm-progress-fill').style.width = pct + '%';
+            document.getElementById('dm-progress-counter').textContent = p.index + ' / ' + p.total;
+            document.getElementById('dm-sent-count').textContent = p.sent;
+            document.getElementById('dm-failed-count').textContent = p.failed;
+
+            const log = document.getElementById('dm-log');
+            const entry = document.createElement('div');
+            entry.className = 'dm-log-entry';
+            const color = p.status === 'ok' ? 'rgba(255,255,255,0.8)' : (p.status === 'waiting' || p.status === 'flood') ? 'rgba(255,255,255,0.4)' : 'rgba(255,100,100,0.8)';
+            entry.innerHTML = `<span style="color:${color}">${p.detail}</span> <span style="color: #94a3b8;">→ ${p.target}</span>`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function handleDmComplete(p) {
+            dmSending = false;
+            document.getElementById('dm-send-icon').classList.remove('hidden');
+            document.getElementById('dm-send-spinner').classList.add('hidden');
+            document.getElementById('dm-send-label').textContent = 'Запустить рассылку';
+            document.getElementById('dm-send-btn').disabled = false;
+
+            document.getElementById('dm-progress-fill').style.width = '100%';
+            document.getElementById('dm-progress-counter').textContent = p.total + ' / ' + p.total;
+
+            const log = document.getElementById('dm-log');
+            const summary = document.createElement('div');
+            summary.className = 'dm-log-entry';
+            summary.innerHTML = `<span style="color: #1a1a2e;font-weight:700">🏁 Готово! ✅ ${p.sent} отправлено, ❌ ${p.failed} ошибок</span>`;
+            log.appendChild(summary);
+            log.scrollTop = log.scrollHeight;
+
+            if (p.error) {
+                tg.showAlert('❌ ' + p.error);
+            }
+        }
+
+        async function startDirectSend() {
+            if (dmSending) return;
+
+            const sessionName = document.getElementById('dm-session').value;
+            const recipientsRaw = document.getElementById('dm-recipients').value.trim();
+            const text = document.getElementById('dm-text').value;
+
+            if (!sessionName) { tg.showAlert('Выберите аккаунт для отправки!'); return; }
+            if (!recipientsRaw) { tg.showAlert('Укажите хотя бы одного получателя!'); return; }
+            if (!text && !dmFile) { tg.showAlert('Введите текст или прикрепите файл!'); return; }
+
+            dmSending = true;
+            document.getElementById('dm-send-icon').classList.add('hidden');
+            document.getElementById('dm-send-spinner').classList.remove('hidden');
+            document.getElementById('dm-send-label').textContent = 'Отправка…';
+            document.getElementById('dm-send-btn').disabled = true;
+
+            // Show progress area
+            document.getElementById('dm-progress-area').classList.remove('hidden');
+            document.getElementById('dm-log').innerHTML = '';
+            document.getElementById('dm-progress-fill').style.width = '0%';
+            document.getElementById('dm-progress-counter').textContent = '0 / 0';
+            document.getElementById('dm-sent-count').textContent = '0';
+            document.getElementById('dm-failed-count').textContent = '0';
+
+            const formData = new FormData();
+            formData.append('session_name', sessionName);
+            formData.append('recipients', recipientsRaw);
+            formData.append('text', text);
+            if (dmFile) {
+                formData.append('file', dmFile);
+            }
+
+            try {
+                const resp = await fetch('/api/direct-send', { method: 'POST', body: formData });
+                const data = await resp.json();
+
+                if (data.error) {
+                    tg.showAlert('❌ ' + data.error);
+                    dmSending = false;
+                    document.getElementById('dm-send-icon').classList.remove('hidden');
+                    document.getElementById('dm-send-spinner').classList.add('hidden');
+                    document.getElementById('dm-send-label').textContent = 'Запустить рассылку';
+                    document.getElementById('dm-send-btn').disabled = false;
+                    return;
+                }
+
+                dmTaskId = data.task_id;
+                document.getElementById('dm-progress-counter').textContent = '0 / ' + data.total;
+
+            } catch (err) {
+                tg.showAlert('❌ Ошибка сети: ' + err.message);
+                dmSending = false;
+                document.getElementById('dm-send-icon').classList.remove('hidden');
+                document.getElementById('dm-send-spinner').classList.add('hidden');
+                document.getElementById('dm-send-label').textContent = 'Запустить рассылку';
+                document.getElementById('dm-send-btn').disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

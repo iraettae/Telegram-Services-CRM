@@ -1,0 +1,2344 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CRM Telegram Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        theme: {
+                            bg: '#f0f4ff',
+                            card: 'rgba(255,255,255,0.55)',
+                            accent: '#007AFF',
+                            text: '#1a1a2e',
+                            muted: '#475569',
+                            incomingBg: 'rgba(255,255,255,0.35)',
+                            border: 'rgba(0,0,0,0.06)'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --bg-primary: #f0f4ff;
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --bg-card-hover: rgba(255, 255, 255, 0.65);
+            --bg-glass: rgba(255, 255, 255, 0.88);
+            --bg-nav: rgba(255, 255, 255, 0.72);
+            --bg-input: rgba(255, 255, 255, 0.75);
+            --bg-msg-in: rgba(255, 255, 255, 0.7);
+            --bg-msg-out: rgba(0, 122, 255, 0.1);
+            --text-primary: #1a1a2e;
+            --text-muted: #475569;
+            --border-card: rgba(255, 255, 255, 0.5);
+            --border-light: rgba(0, 0, 0, 0.06);
+            --shadow-card: rgba(0, 0, 0, 0.06);
+            --accent: #007AFF;
+        }
+        html.dark {
+            --bg-primary: #1a1a2e;
+            --bg-card: rgba(40, 40, 60, 0.85);
+            --bg-card-hover: rgba(50, 50, 75, 0.9);
+            --bg-glass: rgba(30, 30, 50, 0.92);
+            --bg-nav: rgba(25, 25, 45, 0.85);
+            --bg-input: rgba(40, 40, 60, 0.75);
+            --bg-msg-in: rgba(40, 40, 60, 0.7);
+            --bg-msg-out: rgba(0, 122, 255, 0.2);
+            --text-primary: #e4e4e7;
+            --text-muted: #94a3b8;
+            --border-card: rgba(255, 255, 255, 0.08);
+            --border-light: rgba(255, 255, 255, 0.06);
+            --shadow-card: rgba(0, 0, 0, 0.3);
+            --accent: #0A84FF;
+        }
+        body {
+            background: var(--bg-primary);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            overflow: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* === MESH GRADIENT BACKGROUND === */
+        .mesh-bg::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(0, 122, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(175, 82, 222, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 60% 80%, rgba(52, 199, 89, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 10% 85%, rgba(255, 149, 0, 0.1) 0%, transparent 50%);
+            opacity: 0.8;
+            pointer-events: none;
+        }
+        html.dark .mesh-bg::before {
+            background:
+                radial-gradient(circle at 20% 30%, rgba(0, 122, 255, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(175, 82, 222, 0.06) 0%, transparent 50%),
+                radial-gradient(circle at 60% 80%, rgba(52, 199, 89, 0.06) 0%, transparent 50%),
+                radial-gradient(circle at 10% 85%, rgba(255, 149, 0, 0.06) 0%, transparent 50%);
+            opacity: 0.5;
+        }
+
+        .glass-panel {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-card);
+            box-shadow: 0 4px 16px var(--shadow-card);
+            border-radius: 1.5rem;
+        }
+
+        .glass-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            box-shadow: 0 4px 16px var(--shadow-card);
+            border-radius: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .solid-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            box-shadow: 0 4px 16px var(--shadow-card);
+            border-radius: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .solid-card:hover {
+            border-color: var(--border-card);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px var(--shadow-card);
+        }
+        .glass-card:hover {
+            border-color: var(--border-card);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px var(--shadow-card);
+        }
+
+        .glass-input {
+            background: var(--bg-input);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+            caret-color: var(--text-primary);
+            border-radius: 9999px;
+            transition: all 0.2s ease;
+        }
+
+        .glass-input:focus {
+            border-color: #007AFF;
+            box-shadow: 0 0 0 3px rgba(0,122,255,0.12);
+            outline: none;
+        }
+
+        /* Textareas: не пилюля, а нормальный прямоугольник */
+        textarea.glass-input {
+            border-radius: 0.75rem;
+            resize: vertical;
+            min-height: 120px;
+            line-height: 1.6;
+        }
+
+        .glass-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+            font-weight: 600;
+        }
+
+        .glass-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0, 122, 255, 0.35);
+        }
+
+        .glass-btn:active { transform: scale(0.97); }
+
+        .glass-nav {
+            background: var(--bg-nav);
+            backdrop-filter: blur(24px) saturate(200%);
+            -webkit-backdrop-filter: blur(24px) saturate(200%);
+            border-top: 1px solid var(--border-card);
+            border-radius: 9999px;
+            box-shadow: 0 -4px 16px var(--shadow-card);
+        }
+
+        /* Nav active glow */
+        #nav-leads.text-theme-accent, 
+        #nav-accounts.text-theme-accent, 
+        #nav-ai.text-theme-accent, 
+        #nav-operators.text-theme-accent {
+            /* Active state styles if needed, no glow in light theme */
+        }
+
+        /* === SCROLLBAR === */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* === MESSAGES === */
+        .message-bubble { max-width: 85%; word-wrap: break-word; line-height: 1.4; }
+
+        .msg-out {
+            background: var(--bg-msg-out);
+            border: 1px solid rgba(0, 122, 255, 0.15);
+            color: var(--text-primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        }
+
+        .msg-in {
+            background: var(--bg-msg-in);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        }
+
+        /* === ANIMATIONS === */
+        .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* === GLOW ACCENT === */
+        .glow-accent {
+            box-shadow: 0 4px 12px rgba(0,122,255,0.25);
+        }
+
+        /* === MODERN TOGGLE SWITCH (Apple-style) === */
+        .glass-toggle {
+            background: rgba(120, 120, 128, 0.16);
+            border: none;
+            transition: background 0.3s ease;
+        }
+        .glass-toggle::after {
+            background: white !important;
+            border: none !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.1) !important;
+        }
+        .peer:checked ~ .glass-toggle {
+            background: #34C759;
+            border-color: transparent;
+            box-shadow: none;
+        }
+        .peer:checked ~ .glass-toggle::after {
+            background: white !important;
+        }
+
+        /* === FORCE AI PILL === */
+        .force-ai-pill {
+            background: linear-gradient(135deg, rgba(0,122,255,0.08), rgba(88,86,214,0.08));
+            border: 1px solid rgba(0,122,255,0.12);
+            color: #007AFF;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            transition: all 0.2s ease;
+        }
+        .force-ai-pill:hover {
+            background: linear-gradient(135deg, rgba(0,122,255,0.15), rgba(88,86,214,0.15));
+            transform: scale(1.02);
+        }
+        .force-ai-pill:active {
+            transform: scale(0.97);
+        }
+
+        /* === STAR GLOW (AI active) === */
+        .star-glow {
+            color: #FFD60A;
+            animation: starPulse 2s ease-in-out infinite;
+        }
+        @keyframes starPulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        /* === AI INPUT BTN === */
+        .ai-input-btn {
+            background: linear-gradient(135deg, #5856D6, #007AFF);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: none;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(88, 86, 214, 0.3);
+        }
+        .ai-input-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(88, 86, 214, 0.4);
+        }
+        .ai-input-btn:active { transform: scale(0.95); }
+        .ai-input-btn:disabled {
+            opacity: 0.5;
+            cursor: wait;
+        }
+
+        /* === FIERY LIGHTNING (AI toggle active) === */
+        .lightning-fire {
+            color: #FF6B00;
+            animation: firePulse 1.5s ease-in-out infinite;
+        }
+        @keyframes firePulse {
+            0%, 100% { opacity: 0.7; transform: scale(1); color: #FF6B00; }
+            50% { opacity: 1; transform: scale(1.05); color: #FF4500; }
+        }
+
+        /* === FIERY AI BUTTON === */
+        .ai-fire {
+            background: linear-gradient(135deg, #FF6B00, #FF4500, #FF1493) !important;
+            animation: aiFire 2s ease-in-out infinite;
+        }
+        @keyframes aiFire {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+
+        /* === NAV ACTIVE DOT === */
+        .nav-dot {
+            position: relative;
+        }
+        .nav-dot .nav-circle {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(0, 122, 255, 0.15);
+            z-index: -1;
+        }
+        .nav-active .nav-circle {
+            display: block;
+        }
+
+        /* === TAB VIEW TRANSITIONS === */
+        .tab-view {
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            will-change: opacity, transform;
+        }
+        .tab-view.tab-hidden {
+            opacity: 0;
+            transform: translateY(8px);
+            pointer-events: none;
+            position: absolute;
+            visibility: hidden;
+        }
+        .tab-view.tab-visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+            visibility: visible;
+        }
+
+        /* === SLIDE PANEL (Chat open/close) === */
+        .slide-panel {
+            transform: translateX(100%);
+            transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+            will-change: transform;
+        }
+        .slide-panel.slide-open {
+            transform: translateX(0);
+        }
+
+        /* === ANTI-WEB: Native Feel === */
+        button, [onclick], .glass-card, .solid-card, .glass-btn, .glass-nav div, .nav-dot {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+        }
+        /* Allow long-press on chat cards without native context menu */
+        .solid-card {
+            -webkit-touch-callout: none !important;
+            touch-action: pan-y;
+        }
+        ::-webkit-scrollbar { width: 0; background: transparent; }
+
+        /* === SKELETON === */
+        .skeleton { background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 12px; }
+        .skeleton-circle { border-radius: 50%; }
+        .skeleton-text { height: 14px; margin-bottom: 8px; }
+        .skeleton-text-sm { height: 10px; margin-bottom: 6px; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* === DARK MODE GLOBAL OVERRIDES === */
+        html.dark .text-\[\#1a1a2e\] { color: var(--text-primary) !important; }
+        html.dark .bg-gray-200 { background-color: rgba(255,255,255,0.1) !important; }
+        html.dark .skeleton { 
+            background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%) !important; 
+            background-size: 200% 100% !important;
+        }
+        html.dark .text-theme-muted { color: var(--text-muted) !important; }
+        html.dark .placeholder-theme-muted::placeholder { color: var(--text-muted) !important; }
+        html.dark .bg-theme-bg { background-color: var(--bg-primary) !important; }
+        html.dark .border-theme-accent { border-color: var(--accent) !important; }
+        html.dark input, html.dark textarea { color: var(--text-primary) !important; }
+    </style>
+</head>
+
+<body class="h-screen w-screen flex flex-col relative text-sm mesh-bg">
+
+    <!-- VIEW: LEADS -->
+    <div id="view-leads" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-visible">
+        <!-- Header -->
+        <div class="px-5 pt-5 pb-3 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold flex items-center gap-2">
+                    <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">iraettae's</span> <span class="text-[#1a1a2e]">CRM</span>
+                    <span id="active-account-badge"
+                        class="hidden bg-theme-accent/20 text-theme-accent text-xs px-2 py-0.5 rounded-full border border-theme-accent/30 cursor-pointer backdrop-blur-sm"
+                        onclick="filterByAccount(null)">Фильтр ✕</span>
+                </h1>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="px-5 flex gap-2 overflow-x-auto scrollbar-hide pb-2 pt-2">
+            <button id="filter-all" onclick="setFilter('all')"
+                class="whitespace-nowrap glass-btn text-white px-4 py-1.5 rounded-full font-semibold transition">Все
+                чаты</button>
+            <button id="filter-unread" onclick="setFilter('unread')"
+                class="whitespace-nowrap glass-card text-theme-muted px-4 py-1.5 rounded-full hover:text-[#1a1a2e] transition">Непрочитанные</button>
+            <button id="filter-priority" onclick="setFilter('priority')"
+                class="whitespace-nowrap glass-card text-theme-muted px-4 py-1.5 rounded-full hover:text-[#1a1a2e] transition">Приоритет</button>
+        </div>
+
+        <!-- Chat List -->
+        <div id="chats-list" class="flex-1 overflow-y-auto scrollbar-hide px-3 pb-4 mt-2">
+            <div class="text-center text-theme-muted text-xs mt-10">Loading chats...</div>
+        </div>
+
+
+    </div>
+
+    <!-- VIEW: ACCOUNTS -->
+    <div id="view-accounts" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-hidden">
+        <div class="px-5 pt-5 pb-3 flex items-center gap-4">
+            <h1 class="text-xl font-bold mx-auto text-[#1a1a2e]">✨ Premium-аккаунты</h1>
+        </div>
+
+        <div class="px-5 mb-4 text-theme-muted text-[13px] leading-relaxed">
+            Выберите аккаунт для просмотра чатов или управления профилями.
+        </div>
+
+        <div class="px-5 flex justify-between items-center mb-4">
+            <h2 class="font-bold text-[#1a1a2e]">Подключённые аккаунты</h2>
+            <span class="glass-card text-theme-accent text-xs px-2.5 py-1 rounded-full"
+                id="accounts-count">0 Активных</span>
+        </div>
+
+        <div id="accounts-list" class="flex-1 overflow-y-auto scrollbar-hide px-5 gap-3 flex flex-col pb-4">
+            <div class="text-center text-theme-muted text-xs mt-10">Загрузка аккаунтов...</div>
+        </div>
+    </div>
+
+    <!-- VIEW: AI SETTINGS -->
+    <div id="view-ai-settings" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-hidden">
+        <div class="px-5 pt-5 pb-3 flex items-center">
+            <h1 class="text-xl font-bold text-[#1a1a2e]">⚙️ Настройки ИИ</h1>
+        </div>
+        <div class="flex-1 overflow-y-auto scrollbar-hide px-5 pb-4">
+            <div class="glass-panel rounded-2xl p-5 mb-4">
+                <label class="block text-sm font-bold text-[#1a1a2e] mb-2">API Ключ (OnlySq / DeepSeek-V3)</label>
+                <div class="flex gap-2 mb-4">
+                    <input type="password" id="ai-api-key" placeholder="Ваш API ключ OnlySq..."
+                        class="flex-1 glass-input text-[#1a1a2e] rounded-xl p-3 outline-none text-sm placeholder-theme-muted">
+                    <button onclick="verifyAPIKey()" id="verify-ai-btn"
+                        class="glass-card hover:border-black/10 text-[#1a1a2e] px-4 py-2 rounded-xl transition font-semibold whitespace-nowrap">Проверить</button>
+                </div>
+
+                <label class="block text-sm font-bold text-[#1a1a2e] mb-2">System Prompt (Роль и инструкции)</label>
+                <textarea id="ai-system-prompt" rows="14"
+                    class="w-full glass-input text-[#1a1a2e] rounded-xl p-3 outline-none text-sm placeholder-theme-muted mb-4" placeholder="Введите системный промпт..."></textarea>
+
+                <label class="block text-sm font-bold text-[#1a1a2e] mb-2">База Знаний (FAQ)</label>
+                <textarea id="ai-knowledge-base" rows="12"
+                    class="w-full glass-input text-[#1a1a2e] rounded-xl p-3 outline-none text-sm placeholder-theme-muted mb-4" placeholder="Введите базу знаний..."></textarea>
+
+                <div class="flex gap-4 mb-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-[#1a1a2e] mb-2">Задержка чтения (сек)</label>
+                        <input type="number" id="ai-read-delay" value="2" min="0" max="60"
+                            class="w-full glass-input text-[#1a1a2e] rounded-xl p-3 outline-none text-sm">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-[#1a1a2e] mb-2">Задержка печати (сек)</label>
+                        <input type="number" id="ai-typing-delay" value="2" min="0" max="60"
+                            class="w-full glass-input text-[#1a1a2e] rounded-xl p-3 outline-none text-sm">
+                    </div>
+                </div>
+
+                <button onclick="saveAISettings()" id="save-ai-btn"
+                    class="w-full glass-btn text-white font-bold py-3 rounded-xl hover:scale-[1.02] transition glow-accent">Сохранить
+                    настройки</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: OPERATORS -->
+    <div id="view-operators" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-hidden">
+        <div class="px-5 pt-5 pb-3 flex items-center">
+            <h1 class="text-xl font-bold text-[#1a1a2e]">👨‍💻 Админы</h1>
+        </div>
+        <div class="px-5 mb-4 text-theme-muted text-[13px] leading-relaxed">
+            Здесь вы можете добавить или удалить администраторов, которые будут получать пуши о готовности лидов и иметь доступ к CRM.
+        </div>
+        <div class="flex-1 overflow-y-auto scrollbar-hide px-5 pb-4">
+            <div class="glass-panel rounded-2xl p-4 mb-4">
+                <label class="block text-sm font-bold text-[#1a1a2e] mb-2">Новый Админ</label>
+                <div class="flex gap-2">
+                    <input type="text" id="new-operator-identity" placeholder="Telegram ID или @username"
+                        class="flex-1 glass-input text-[#1a1a2e] rounded-xl p-3 outline-none text-sm placeholder-theme-muted">
+                    <button onclick="addOperator()" id="add-operator-btn"
+                        class="glass-btn text-white px-4 py-2 rounded-xl transition font-bold whitespace-nowrap">Добавить</button>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mb-2 mt-2">
+                <h2 class="font-bold text-[#1a1a2e]">Список администраторов</h2>
+            </div>
+            <div id="operators-list" class="flex flex-col gap-2">
+                <div class="text-center text-theme-muted text-xs mt-10">Загрузка...</div>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- VIEW: TEST AI -->
+    <div id="view-test-ai" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-hidden">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between">
+            <h1 class="text-xl font-bold text-[#1a1a2e]">🧪 Тест ИИ</h1>
+            <button onclick="createTestChat()" class="glass-btn text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg leading-none">+</button>
+        </div>
+        <div class="px-5 mb-4 text-theme-muted text-[13px] leading-relaxed">
+            Создавайте тестовые чаты, чтобы проверить работу автоответчика без реальных лидов.
+        </div>
+        <div id="test-chats-list" class="flex-1 overflow-y-auto scrollbar-hide px-5 gap-3 flex flex-col pb-4">
+            <div class="text-center text-theme-muted text-xs mt-10">Загрузка...</div>
+        </div>
+    </div>
+
+    <!-- VIEW: TEST AI CHAT WINDOW -->
+    <div id="view-test-ai-chat" class="absolute inset-0 flex flex-col z-30 hidden slide-panel bg-theme-bg">
+        <!-- Chat Header -->
+        <div class="px-2 pt-4 pb-3 flex items-center gap-2 glass-panel z-10 border-b-0 rounded-none">
+            <button onclick="closeTestChat()" class="p-2 text-[#1a1a2e] hover:bg-white/10 rounded-full transition shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            </button>
+            <div class="w-9 h-9 bg-gradient-to-br from-green-400 to-teal-600 rounded-full flex items-center justify-center font-bold text-white text-lg relative shrink-0">
+                🧪
+            </div>
+            <h2 class="font-semibold text-[15px] truncate text-[#1a1a2e] flex-1 min-w-0" id="test-chat-header-name">Test Chat</h2>
+            <button onclick="deleteCurrentTestChat()" class="p-1.5 text-red-400 hover:text-red-500 transition rounded-full" title="Удалить чат">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="test-messages-list" class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 scrollbar-hide relative">
+            <div class="text-center text-xs text-theme-muted my-2"><span class="glass-card px-3 py-1 rounded-full text-theme-muted">Chat opened</span></div>
+        </div>
+
+        <div id="test-ai-loading" class="hidden px-4 pb-2 text-xs text-theme-muted flex items-center gap-2">
+            <div class="w-4 h-4 border-2 border-theme-accent border-t-transparent rounded-full animate-spin"></div> ИИ думает...
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 glass-panel border-t-0 rounded-none shrink-0 mb-4 flex flex-col gap-2">
+            <form id="testSendForm" class="flex items-center gap-2">
+                <div class="flex-1 glass-card rounded-full flex items-center pr-1 pl-4 py-1">
+                    <input type="text" id="testMessageInput" class="flex-1 bg-transparent text-[#1a1a2e] border-none outline-none py-2 placeholder-theme-muted text-[15px]" placeholder="Написать..." autocomplete="off">
+                </div>
+                <button type="submit" id="testSendBtn" class="w-10 h-10 glass-btn text-white rounded-full flex items-center justify-center shrink-0 hover:scale-105 transition glow-accent">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- VIEW: CHAT WINDOW -->
+    <div id="view-chat"
+        class="absolute inset-0 flex flex-col z-30 hidden slide-panel bg-theme-bg">
+        <!-- Chat Header -->
+        <div
+            class="px-2 pt-4 pb-3 flex items-center gap-2 glass-panel z-10 border-b-0 rounded-none">
+            <button onclick="closeChat()" class="p-2 text-[#1a1a2e] hover:bg-white/10 rounded-full transition shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+            </button>
+            <div class="w-9 h-9 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center font-bold text-white text-sm relative shrink-0"
+                id="chat-header-avatar">
+                C
+            </div>
+            <h2 class="font-semibold text-[15px] truncate text-[#1a1a2e] flex-1 min-w-0" id="chat-header-name">Chat Name</h2>
+            <div class="text-xs text-theme-accent hidden" id="chat-header-status"></div>
+            <!-- Compact icon row -->
+            <button id="chat-unread-btn" onclick="markChatUnread()"
+                class="p-1.5 text-theme-muted hover:text-[#1a1a2e] transition rounded-full" title="Скрыть прочтение">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z">
+                    </path>
+                </svg>
+            </button>
+            <button id="chat-priority-btn" onclick="togglePriority()"
+                class="p-1.5 text-theme-muted hover:text-yellow-400 transition rounded-full" title="Приоритет">
+                <svg class="w-5 h-5" id="chat-priority-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z">
+                    </path>
+                </svg>
+            </button>
+            <button id="chat-ai-toggle-btn" onclick="toggleChatAI()" class="p-1.5 hover:text-theme-accent transition rounded-full" title="Вкл/Выкл автоответчик">
+                <svg class="w-6 h-6" id="chat-ai-toggle-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </button>
+        </div>
+        <!-- Hidden badges for JS compat -->
+        <div id="chat-ai-paused-badge" class="hidden"></div>
+
+        <!-- Messages Area -->
+        <div id="messages-list"
+            class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 scrollbar-hide relative">
+            <div class="text-center text-xs text-theme-muted my-2"><span
+                    class="glass-card px-3 py-1 rounded-full text-theme-muted">Chat opened</span></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 glass-panel border-t-0 rounded-none shrink-0 mb-4 flex flex-col gap-2">
+            <!-- Media Preview Area (hidden by default) -->
+            <div id="media-preview-container"
+                class="hidden relative w-16 h-16 glass-card rounded-lg items-center justify-center ml-2 shrink-0">
+                <img id="media-preview-img" class="w-full h-full object-cover rounded-lg hidden">
+                <div id="media-preview-icon"
+                    class="hidden text-theme-muted flex items-center justify-center w-full h-full">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                        </path>
+                    </svg>
+                </div>
+                <button type="button" onclick="clearMediaSelection()"
+                    class="absolute -top-2 -right-2 bg-red-500 text-[#1a1a2e] rounded-full w-5 h-5 flex items-center justify-center text-[12px] shadow-lg hover:scale-110 z-10">&times;</button>
+            </div>
+
+            <form id="sendForm" class="flex items-center gap-2">
+                <input type="file" id="mediaInput" class="hidden" onchange="handleMediaSelect(event)">
+                <button type="button" onclick="document.getElementById('mediaInput').click()"
+                    class="w-10 h-10 glass-card text-theme-muted hover:text-[#1a1a2e] rounded-full flex items-center justify-center shrink-0 hover:scale-105 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13">
+                        </path>
+                    </svg>
+                </button>
+                <button type="button" id="chat-ai-force-btn" onclick="forceAIReply()"
+                    class="ai-input-btn ai-fire shrink-0" title="Сгенерировать ответ ИИ">AI</button>
+                <div
+                    class="flex-1 glass-card rounded-full flex items-center pr-1 pl-4 py-1">
+                    <input type="text" id="messageInput"
+                        class="flex-1 bg-transparent text-[#1a1a2e] border-none outline-none py-2 placeholder-theme-muted text-[15px]"
+                        placeholder="Message..." autocomplete="off">
+                </div>
+                <button type="submit" id="sendBtn"
+                    class="w-10 h-10 glass-btn text-white rounded-full flex items-center justify-center shrink-0 hover:scale-105 transition glow-accent">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION BAR -->
+    <nav class="fixed bottom-6 left-4 right-4 h-[64px] glass-nav z-20 flex justify-around items-center px-4 py-1">
+        <div onclick="switchTab('leads')" id="nav-leads"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-accent transition nav-active">
+            <div class="nav-dot relative flex items-center justify-center">
+                <div class="nav-circle"></div>
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2zm0 14H5.17l-.59.59-.58.58V4h16v12z" />
+                    <path d="M7 9h10v2H7zM7 6h10v2H7z" />
+                </svg>
+            </div>
+            <span class="text-[11px] font-semibold whitespace-nowrap">Диалоги</span>
+        </div>
+        <div onclick="switchTab('accounts')" id="nav-accounts"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-[#1a1a2e] transition">
+            <div class="nav-dot relative flex items-center justify-center">
+                <div class="nav-circle"></div>
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z" />
+                </svg>
+            </div>
+            <span class="text-[11px] font-semibold whitespace-nowrap">Аккаунты</span>
+        </div>
+        <div onclick="switchTab('ai-settings')" id="nav-ai"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-[#1a1a2e] transition">
+            <div class="nav-dot relative flex items-center justify-center">
+                <div class="nav-circle"></div>
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
+                </svg>
+            </div>
+            <span class="text-[11px] font-semibold whitespace-nowrap">Настройки ИИ</span>
+        </div>
+        <div onclick="switchTab('operators')" id="nav-operators"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-[#1a1a2e] transition">
+            <div class="nav-dot relative flex items-center justify-center">
+                <div class="nav-circle"></div>
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>
+            </div>
+            <span class="text-[11px] font-semibold whitespace-nowrap">Админы</span>
+        </div>
+    
+        <div onclick="switchTab('test-ai')" id="nav-test-ai"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-[#1a1a2e] transition">
+            <div class="nav-dot relative flex items-center justify-center">
+                <div class="nav-circle"></div>
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19.8 18.4L14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6zM12 11.5l3.54 4.75c.1.13.15.28.15.44H8.31c0-.16.05-.31.15-.44L12 11.5z"/>
+                </svg>
+            </div>
+            <span class="text-[11px] font-semibold whitespace-nowrap">Тест</span>
+        </div>
+    </nav>
+
+    <!-- CORE LOGIC -->
+
+    <!-- CORE LOGIC -->
+    <script>
+        const tg = window.Telegram?.WebApp;
+
+        // === NAVIGATION STATE ===
+        let navStack = [];
+
+        if (tg) {
+            tg.expand();
+            tg.ready();
+
+            // === THEME ADAPTATION ===
+            const isDark = tg.colorScheme === 'dark';
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+                tg.setHeaderColor('#1a1a2e');
+                tg.setBackgroundColor('#1a1a2e');
+            } else {
+                tg.setHeaderColor('#f0f4ff');
+                tg.setBackgroundColor('#f0f4ff');
+            }
+
+            // Prevent accidental swipe-down closing the app
+            try { tg.disableVerticalSwipes(); } catch(e) {}
+
+            // === NATIVE SETTINGS BUTTON ===
+            try {
+                tg.SettingsButton.show();
+                tg.SettingsButton.onClick(() => switchTab('ai-settings'));
+            } catch(e) {}
+
+            // === NATIVE BACK BUTTON ===
+            tg.BackButton.onClick(() => {
+                if (navStack.length > 0) {
+                    const top = navStack[navStack.length - 1];
+                    if (top === 'chat') closeChat();
+                    else if (top === 'test-chat') closeTestChat();
+                }
+            });
+        }
+
+        // === HISTORY API (Android back button) ===
+        window.addEventListener('popstate', (e) => {
+            if (navStack.length > 0) {
+                const top = navStack[navStack.length - 1];
+                if (top === 'chat') closeChat(true);
+                else if (top === 'test-chat') closeTestChat(true);
+            }
+        });
+
+        // === HAPTIC FEEDBACK HELPERS ===
+        const haptic = {
+            light: () => { try { tg?.HapticFeedback?.impactOccurred('light'); } catch(e){} },
+            medium: () => { try { tg?.HapticFeedback?.impactOccurred('medium'); } catch(e){} },
+            heavy: () => { try { tg?.HapticFeedback?.impactOccurred('heavy'); } catch(e){} },
+            success: () => { try { tg?.HapticFeedback?.notificationOccurred('success'); } catch(e){} },
+            error: () => { try { tg?.HapticFeedback?.notificationOccurred('error'); } catch(e){} },
+            selection: () => { try { tg?.HapticFeedback?.selectionChanged(); } catch(e){} }
+        };
+
+        function tgConfirm(msg) {
+            return new Promise(resolve => {
+                if (tg?.showConfirm) {
+                    tg.showConfirm(msg, resolve);
+                } else {
+                    resolve(confirm(msg));
+                }
+            });
+        }
+
+        function getAuthHeader() {
+            return 'tma ' + (tg ? tg.initData : '');
+        }
+
+        function getSkeletonCards(count = 5) {
+            return Array.from({length: count}, () => `
+                <div class="flex items-start gap-3 p-3 mb-2 rounded-2xl skeleton" style="background:var(--bg-card)">
+                    <div class="skeleton-circle rounded-full animate-pulse" style="width:48px;height:48px;flex-shrink:0;background:var(--border-light)"></div>
+                    <div style="flex:1">
+                        <div class="skeleton-text rounded animate-pulse" style="width:60%;height:14px;margin-bottom:4px;background:var(--border-light)"></div>
+                        <div class="skeleton-text-sm rounded animate-pulse" style="width:40%;height:10px;margin-bottom:8px;background:var(--border-light)"></div>
+                        <div class="skeleton-text rounded animate-pulse" style="width:80%;height:14px;margin-top:8px;background:var(--border-light)"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        let currentChatId = null;
+        let currentBusinessConnId = null;
+        let isCurrentChatHighPriority = false;
+
+        let allChatsData = [];
+        let currentFilter = 'all'; 
+        let currentAccountFilter = null;
+
+        let lastChatsDataString = "";
+        let lastMessagesHtml = "";
+
+        let isPollingActive = true;
+        let isFetching = false;
+
+        const viewLeads = document.getElementById('view-leads');
+        const viewAccounts = document.getElementById('view-accounts');
+        const viewAISettings = document.getElementById('view-ai-settings');
+        const viewOperators = document.getElementById('view-operators');
+        const navLeads = document.getElementById('nav-leads');
+        const navAccounts = document.getElementById('nav-accounts');
+        const navAI = document.getElementById('nav-ai');
+        const navOperators = document.getElementById('nav-operators');
+
+        const viewTestAI = document.getElementById('view-test-ai');
+        const navTestAI = document.getElementById('nav-test-ai');
+
+        function switchTab(tabName) {
+            haptic.light();
+            
+            const allViews = [viewLeads, viewAccounts, viewAISettings, viewOperators, viewTestAI];
+            const allNavs = [navLeads, navAccounts, navAI, navOperators, navTestAI];
+            
+            // Hide all tabs with fade
+            allViews.forEach(v => {
+                v.classList.add('tab-hidden');
+                v.classList.remove('tab-visible');
+            });
+            allNavs.forEach(n => {
+                n.classList.remove('text-theme-accent', 'nav-active');
+                n.classList.add('text-theme-muted', 'hover:text-[#1a1a2e]');
+            });
+
+            // Show target tab with fade-in (tiny delay so fade-out starts first)
+            const tabMap = {
+                'leads':       { view: viewLeads,      nav: navLeads,      init: () => renderChats() },
+                'accounts':    { view: viewAccounts,   nav: navAccounts,   init: () => fetchAccounts() },
+                'ai-settings': { view: viewAISettings, nav: navAI,         init: () => loadAISettings() },
+                'operators':   { view: viewOperators,  nav: navOperators,  init: () => loadOperators() },
+                'test-ai':     { view: viewTestAI,     nav: navTestAI,     init: () => loadTestChats() }
+            };
+            
+            const tab = tabMap[tabName];
+            if (tab) {
+                setTimeout(() => {
+                    tab.view.classList.remove('tab-hidden');
+                    tab.view.classList.add('tab-visible');
+                    tab.nav.classList.add('text-theme-accent', 'nav-active');
+                    tab.nav.classList.remove('text-theme-muted', 'hover:text-[#1a1a2e]');
+                    tab.init();
+                }, 50);
+            }
+        }
+
+        function setFilter(filterName) {
+            haptic.selection();
+            currentFilter = filterName;
+
+            const activeClass = "whitespace-nowrap glass-btn text-white px-4 py-1.5 rounded-full font-semibold transition";
+            const inactiveClass = "whitespace-nowrap glass-card text-theme-muted px-4 py-1.5 rounded-full hover:text-[#1a1a2e] transition";
+
+            document.getElementById('filter-all').className = filterName === 'all' ? activeClass : inactiveClass;
+            document.getElementById('filter-unread').className = filterName === 'unread' ? activeClass : inactiveClass;
+            document.getElementById('filter-priority').className = filterName === 'priority' ? activeClass : inactiveClass;
+
+            renderChats();
+        }
+
+        function filterByAccount(connId) {
+            haptic.selection();
+            currentAccountFilter = connId;
+            const badge = document.getElementById('active-account-badge');
+            if (connId) {
+                badge.classList.remove('hidden');
+                switchTab('leads');
+            } else {
+                badge.classList.add('hidden');
+            }
+            renderChats();
+        }
+
+        async function fetchAccounts() {
+            try {
+                const res = await fetch('/api/accounts', {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        document.body.innerHTML = '<div class="flex items-center justify-center h-full text-center p-5"><h1 class="text-xl font-bold text-red-400">⛔️ Ошибка доступа<br><span class="text-sm font-normal text-theme-muted mt-2 block">У вас нет прав администратора CRM.</span></h1></div>';
+                    }
+                    return;
+                }
+                const accounts = await res.json();
+                fetch('/api/refresh_avatars', { method: 'POST', headers: { 'Authorization': getAuthHeader() } }).catch(() => {});
+                const container = document.getElementById('accounts-list');
+                document.getElementById('accounts-count').innerText = `${accounts.length} Активных`;
+
+                if (accounts.length === 0) {
+                    container.innerHTML = '<div class="text-xs text-theme-muted italic text-center">Нет подключённых аккаунтов</div>';
+                    return;
+                }
+
+                container.innerHTML = accounts.map(acc => `
+                    <div class="glass-card rounded-2xl p-4 relative">
+                        <div class="flex items-center cursor-pointer" onclick="filterByAccount('${acc.id}')">
+                            <div class="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center font-bold text-lg text-[#1a1a2e] mr-4 shrink-0 shadow-inner relative overflow-hidden">
+                                <img src="/static/avatars/${acc.user_id}.jpg" class="absolute inset-0 w-full h-full object-cover rounded-full" onerror="this.style.display='none'">
+                                <span class="z-0">${acc.name ? acc.name.charAt(0) : '?'}</span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-[15px] truncate text-[#1a1a2e] mb-0.5">${acc.name}</div>
+                                <div class="text-xs text-theme-muted flex items-center gap-1">
+                                    <svg class="w-3 h-3 text-theme-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                    Активная сессия
+                                </div>
+                            </div>
+                            <div class="text-xs text-theme-accent bg-theme-accent/10 px-2 py-1 rounded border border-theme-accent/20">Чаты →</div>
+                        </div>
+                        <div class="mt-3 pt-3 border-t border-black/5 flex justify-between items-center">
+                            <span class="text-xs text-[#475569] font-medium">⚡ Автоответчик</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" class="sr-only peer" ${acc.ai_enabled ? 'checked' : ''} onchange="toggleAccountAI('${acc.id}', this)">
+                                <div class="w-11 h-6 glass-toggle rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:rounded-full after:h-[18px] after:w-[18px] after:transition-all after:duration-300"></div>
+                            </label>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function toggleAccountAI(connId, checkbox) {
+            const isEnabled = checkbox.checked;
+            try {
+                await fetch(`/api/accounts/${connId}/toggle_ai`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': getAuthHeader()
+                    },
+                    body: JSON.stringify({ enable: isEnabled })
+                });
+            } catch (e) {
+                console.error('Failed to toggle AI:', e);
+                checkbox.checked = !isEnabled; 
+                tg?.showAlert?.('Failed to toggle AI. Please try again.') || alert('Failed to toggle AI. Please try again.');
+            }
+        }
+
+        async function fetchChats(forceRender = false) {
+            try {
+                const res = await fetch('/api/chats', {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (!res.ok) return;
+                const newData = await res.json();
+                const newDataString = JSON.stringify(newData);
+                if (newDataString !== lastChatsDataString || forceRender) {
+                    allChatsData = newData;
+                    lastChatsDataString = newDataString;
+                    renderChats();
+                    cacheChatsToCloud(newData);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function formatSmartDate(dateString) {
+            const date = new Date(dateString.replace(' ', 'T') + 'Z');
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            const isToday = date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+            const isYesterday = date.getDate() === yesterday.getDate() && date.getMonth() === yesterday.getMonth() && date.getFullYear() === yesterday.getFullYear();
+
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            if (isToday) return timeStr;
+            if (isYesterday) return `Вчера ${timeStr}`;
+            return `${date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${timeStr}`;
+        }
+
+        async function markChatRead(chatId, e) {
+            haptic.selection();
+            if (e) e.stopPropagation();
+            try {
+                await fetch(`/api/chats/${chatId}/read`, {
+                    method: 'POST',
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                fetchChats(true);
+            } catch (err) { console.error(err); }
+        }
+
+        async function replyToChat(chatId, leadName, businessConnId, isHighPriority, e, isAiPaused) {
+            if (e) e.stopPropagation();
+            openChat(chatId, leadName, businessConnId, isHighPriority, isAiPaused);
+            setTimeout(() => { document.getElementById('messageInput').focus(); }, 400);
+        }
+
+        async function markChatUnread() {
+            if (!currentChatId) return;
+            haptic.selection();
+            try {
+                await fetch(`/api/chats/${currentChatId}/unread`, {
+                    method: 'POST',
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                fetchChats(true);
+                closeChat();
+            } catch (err) { console.error(err); }
+        }
+
+        function attachPrefetch(el, chatId) {
+            el.addEventListener('touchstart', () => {
+                if (!el._prefetch) {
+                    el._prefetch = fetch(`/api/messages/${chatId}`, {
+                        headers: { 'Authorization': getAuthHeader() }
+                    }).then(r => r.ok ? r.json() : null);
+                }
+            }, { passive: true });
+        }
+
+        function createChatCard(chat) {
+            const el = document.createElement('div');
+            el.id = `chat-${chat.chat_id}`;
+            el.className = "flex items-start gap-3 p-3 mb-2 rounded-2xl solid-card cursor-pointer";
+            el._chatData = chat; // Store reference for long-press
+            
+            attachPrefetch(el, chat.chat_id);
+            
+            el.innerHTML = `
+                <div class="avatar-container w-12 h-12 rounded-full flex items-center justify-center font-bold text-[#1a1a2e] text-lg relative shrink-0 shadow-lg mt-1">
+                    <img class="avatar-img absolute inset-0 w-full h-full object-cover rounded-full z-10" onerror="this.style.display='none'">
+                    <span class="avatar-text z-0 relative"></span>
+                </div>
+                <div class="flex-1 min-w-0 flex flex-col justify-center">
+                    <div class="flex justify-between items-start mb-1">
+                        <div class="flex flex-col truncate">
+                            <span class="lead-name-container font-bold text-[15px] truncate text-[#1a1a2e] flex items-center gap-1">
+                                <span class="lead-name"></span>
+                                <span class="star-badge hidden"><svg class="w-4 h-4 text-yellow-500 mt-1" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg></span>
+                                <span class="ai-paused-badge hidden text-[10px] ml-1" title="ИИ остановлен">⏸️</span>
+                            </span>
+                            <span class="business-name text-[10px] text-theme-accent/80 font-semibold truncate mt-0.5 max-w-[150px] bg-theme-accent/10 px-1.5 py-0.5 rounded w-fit border border-theme-accent/20"></span>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <span class="smart-date shrink-0 ml-2"></span>
+                            <div class="unread-badge hidden bg-theme-accent text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-[0_0_8px_rgba(167,139,250,0.8)] mt-1"></div>
+                        </div>
+                    </div>
+                    <div class="last-message truncate pr-2 mt-1"></div>
+                    <div class="action-buttons flex gap-2 mt-2 hidden" onclick="event.stopPropagation()">
+                        <button class="btn-read text-[11px] glass-card text-[#1a1a2e] dark:text-[#e4e4e7] px-3 py-1 rounded transition">Прочитать</button>
+                    </div>
+                </div>
+            `;
+            
+            // === LONG-PRESS → NATIVE POPUP (attached ONCE here) ===
+            let longPressTimer = null;
+            let longPressTriggered = false;
+            
+            el.addEventListener('touchstart', () => {
+                longPressTriggered = false;
+                longPressTimer = setTimeout(() => {
+                    longPressTriggered = true;
+                    haptic.medium();
+                    const c = el._chatData; // Always use latest chat data
+                    if (tg?.showPopup) {
+                        tg.showPopup({
+                            title: c.lead_name,
+                            message: c.last_message_text ? c.last_message_text.substring(0, 100) : 'Нет сообщений',
+                            buttons: [
+                                { id: 'read', type: 'default', text: '👁 Прочитано' },
+                                { id: 'priority', type: 'default', text: c.is_high_priority ? '⭐ Убрать приоритет' : '⭐ Приоритет' },
+                                { id: 'ai_toggle', type: 'destructive', text: c.ai_paused ? '▶️ Включить ИИ' : '⏸ Стоп ИИ' },
+                                { id: 'cancel', type: 'cancel' }
+                            ]
+                        }, (btnId) => {
+                            if (btnId === 'read') markChatRead(c.chat_id);
+                            else if (btnId === 'priority') togglePriority(c.chat_id, !c.is_high_priority);
+                            else if (btnId === 'ai_toggle') toggleChatAIFromList(c.chat_id, c.ai_paused);
+                        });
+                    } else {
+                        console.log('[LongPress] tg.showPopup not available');
+                    }
+                }, 500);
+            }, { passive: true });
+            
+            el.addEventListener('touchend', () => clearTimeout(longPressTimer), { passive: true });
+            el.addEventListener('touchmove', () => { clearTimeout(longPressTimer); longPressTriggered = false; }, { passive: true });
+            
+            // Guard onclick from firing after long-press
+            el.addEventListener('click', (e) => {
+                if (longPressTriggered) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    longPressTriggered = false;
+                    return;
+                }
+                const c = el._chatData;
+                openChat(c.chat_id, c.lead_name, c.business_connection_id, c.is_high_priority, !!c.ai_paused);
+            });
+            
+            // Prevent native WebView context menu from intercepting long-press
+            el.addEventListener('contextmenu', (e) => { e.preventDefault(); return false; });
+            
+            updateChatCard(el, chat);
+            return el;
+        }
+
+        function updateChatCard(el, chat) {
+            // Update stored chat data for long-press popup
+            el._chatData = chat;
+            
+            const colors = ['from-zinc-700 to-zinc-900', 'from-slate-700 to-slate-900', 'from-neutral-700 to-neutral-900', 'from-stone-700 to-stone-900'];
+            const colorGroup = colors[chat.chat_id % colors.length];
+            
+            const avatarContainer = el.querySelector('.avatar-container');
+            avatarContainer.className = `avatar-container w-12 h-12 bg-gradient-to-tr ${colorGroup} rounded-full flex items-center justify-center font-bold text-[#1a1a2e] text-lg relative shrink-0 shadow-lg mt-1`;
+            
+            const img = el.querySelector('.avatar-img');
+            const expectedSrc = `/static/avatars/${chat.chat_id}.jpg`;
+            if (img.getAttribute('src') !== expectedSrc) {
+                img.src = expectedSrc;
+                img.style.display = '';
+            }
+            el.querySelector('.avatar-text').textContent = chat.lead_name.charAt(0);
+            
+            el.querySelector('.lead-name').textContent = chat.lead_name;
+            
+            const starBadge = el.querySelector('.star-badge');
+            if (chat.is_high_priority) starBadge.classList.remove('hidden');
+            else starBadge.classList.add('hidden');
+            
+            const aiPausedBadge = el.querySelector('.ai-paused-badge');
+            if (chat.ai_paused) aiPausedBadge.classList.remove('hidden');
+            else aiPausedBadge.classList.add('hidden');
+            
+            el.querySelector('.business-name').textContent = `💼 ${chat.business_name}`;
+            
+            const smartDateEl = el.querySelector('.smart-date');
+            smartDateEl.textContent = formatSmartDate(chat.last_message_time);
+            smartDateEl.className = `smart-date text-[11px] ${chat.is_unread ? 'text-theme-accent font-bold' : 'text-theme-muted font-medium'} shrink-0 ml-2`;
+            
+            const unreadBadge = el.querySelector('.unread-badge');
+            if (chat.is_unread) {
+                unreadBadge.textContent = chat.unread_count || 1;
+                unreadBadge.classList.remove('hidden');
+            } else {
+                unreadBadge.classList.add('hidden');
+            }
+            
+            const lastMsgEl = el.querySelector('.last-message');
+            lastMsgEl.textContent = chat.last_message_text || 'История пуста';
+            lastMsgEl.className = `last-message text-[13px] ${chat.is_unread ? 'text-[#1a1a2e] font-medium' : 'text-theme-muted'} truncate pr-2 mt-1`;
+            
+            const actionButtons = el.querySelector('.action-buttons');
+            if (chat.is_unread) {
+                actionButtons.classList.remove('hidden');
+                actionButtons.classList.add('flex');
+                
+                const btnRead = actionButtons.querySelector('.btn-read');
+                btnRead.onclick = (e) => markChatRead(chat.chat_id, e);
+            } else {
+                actionButtons.classList.add('hidden');
+                actionButtons.classList.remove('flex');
+            }
+        }
+
+        // === LONG-PRESS HELPERS ===
+        async function togglePriority(chatId, setHigh) {
+            haptic.light();
+            try {
+                await fetch(`/api/chats/${chatId}/priority`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify({ is_high_priority: setHigh })
+                });
+                fetchChats(true);
+                haptic.success();
+            } catch(e) { haptic.error(); }
+        }
+
+        async function toggleChatAIFromList(chatId, currentlyPaused) {
+            haptic.light();
+            try {
+                const endpoint = currentlyPaused ? 'resume_ai' : 'pause_ai';
+                await fetch(`/api/chats/${chatId}/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                fetchChats(true);
+                haptic.success();
+            } catch(e) { haptic.error(); }
+        }
+
+        function renderChats() {
+            const container = document.getElementById('chats-list');
+            if (allChatsData.length === 0) {
+                container.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10">No chats found.</div>';
+                return;
+            }
+
+            let filtered = allChatsData;
+            if (currentAccountFilter) {
+                filtered = filtered.filter(c => c.business_connection_id === currentAccountFilter);
+            }
+            if (currentFilter === 'unread') {
+                filtered = filtered.filter(c => c.is_unread);
+            } else if (currentFilter === 'priority') {
+                filtered = filtered.filter(c => c.is_high_priority);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10">No chats match criteria.</div>';
+                return;
+            }
+
+            // Remove loading skeletons if present
+            if (container.querySelector('.skeleton') || !container.querySelector('.solid-card')) {
+                container.innerHTML = '';
+            }
+
+            const existingIds = new Set();
+            
+            filtered.forEach((chat, index) => {
+                const elId = `chat-${chat.chat_id}`;
+                existingIds.add(elId);
+                let el = document.getElementById(elId);
+                
+                if (el) {
+                    updateChatCard(el, chat);
+                } else {
+                    el = createChatCard(chat);
+                }
+                
+                if (container.children[index] !== el) {
+                    container.insertBefore(el, container.children[index] || null);
+                }
+            });
+
+            Array.from(container.children).forEach(child => {
+                if (!existingIds.has(child.id)) child.remove();
+            });
+        }
+
+        let isMsgPollingActive = false;
+        let msgPollTimeout = null;
+
+        function startMessagePolling(chatId) {
+            isMsgPollingActive = true;
+            let isMsgFetching = false; 
+            
+            async function msgPoll() {
+                if (!isMsgPollingActive || currentChatId !== chatId) return;
+                
+                if (!isFetching && !isMsgFetching && isPollingActive) {
+                    isMsgFetching = true;
+                    try {
+                        await fetchMessages(chatId);
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        isMsgFetching = false;
+                    }
+                }
+                msgPollTimeout = setTimeout(msgPoll, 3000);
+            }
+            
+            msgPollTimeout = setTimeout(msgPoll, 3000);
+        }
+
+        function stopMessagePolling() {
+            isMsgPollingActive = false;
+            if (msgPollTimeout) clearTimeout(msgPollTimeout);
+        }
+
+        async function fetchMessages(chatId) {
+            try {
+                const res = await fetch(`/api/messages/${chatId}`, {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (!res.ok) return;
+                const msgs = await res.json();
+                renderMessages(msgs);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderMessages(msgs, silent = false) {
+            const container = document.getElementById('messages-list');
+            const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+
+            if (container.querySelector('.skeleton')) {
+                container.innerHTML = '';
+            }
+
+            if (msgs.length === 0) {
+                if (!silent) container.innerHTML = '<div class="text-center text-xs text-theme-muted mt-20 glass-card px-4 py-2 rounded-full w-fit mx-auto">History is empty</div>';
+                return;
+            }
+
+            let historyHeader = container.querySelector('.history-header');
+            if (!historyHeader) {
+                container.insertAdjacentHTML('afterbegin', '<div class="history-header text-center text-xs text-theme-muted my-3 w-full flex justify-center"><span class="glass-card px-3 py-1 rounded-full text-theme-muted">History</span></div>');
+            }
+
+            const existingCount = container.querySelectorAll('.message-bubble').length;
+
+            if (msgs.length < existingCount) {
+                container.innerHTML = '<div class="history-header text-center text-xs text-theme-muted my-3 w-full flex justify-center"><span class="glass-card px-3 py-1 rounded-full text-theme-muted">History</span></div>';
+            }
+
+            const startIndex = container.querySelectorAll('.message-bubble').length;
+
+            for (let i = startIndex; i < msgs.length; i++) {
+                const m = msgs[i];
+                const div = document.createElement('div');
+                
+                const isOut = m.is_outgoing;
+                const alignOuter = isOut ? 'self-end' : 'self-start flex-row';
+                div.className = `message-bubble ${alignOuter} flex max-w-[88%] ${silent ? '' : 'animate-fade-in'} mb-1`;
+                
+                const smartDate = formatSmartDate(m.timestamp);
+                const bgClass = isOut ? 'msg-out text-[#1a1a2e] font-medium' : 'msg-in text-[#1a1a2e]';
+                const radiusObj = isOut ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm';
+                const timeColor = isOut ? 'text-[#475569]' : 'text-[#475569]';
+                
+                let mediaHtml = '';
+                if (m.media_url) {
+                    if (m.media_type === 'photo') {
+                        mediaHtml = `<img src="${m.media_url}" class="max-w-full rounded-xl mb-2 object-contain" style="max-height: 250px;" />`;
+                    } else if (m.media_type === 'video') {
+                        mediaHtml = `<video src="${m.media_url}" class="max-w-full rounded-xl mb-2" style="max-height: 250px;" controls playsinline></video>`;
+                    } else if (m.media_type === 'video_note') {
+                        mediaHtml = `<video src="${m.media_url}" class="w-48 h-48 rounded-full mb-2 object-cover border-2 border-theme-accent/50 mx-auto" controls playsinline></video>`;
+                    } else if (m.media_type === 'voice' || m.media_type === 'audio') {
+                        mediaHtml = `<audio src="${m.media_url}" class="w-full mb-2 shrink-0 scale-90 origin-left" controls></audio>`;
+                    } else {
+                        mediaHtml = `<div class="mb-2 p-2 bg-black/10 rounded-lg flex items-center gap-2">
+                            <svg class="w-8 h-8 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <a href="${m.media_url}" target="_blank" class="underline text-sm font-bold truncate">Open File</a>
+                        </div>`;
+                    }
+                }
+
+                div.innerHTML = `
+                    <div class="${bgClass} ${radiusObj} py-2.5 px-3.5 relative overflow-hidden w-full">
+                        ${mediaHtml}
+                        <div class="text-[14.5px] whitespace-pre-wrap">${m.text || ""}</div>
+                        ${m.is_outgoing && !m.text && m.media_type ? '' :
+                        `<div class="flex items-center justify-end mt-1 gap-1">
+                            <span class="text-[10px] ${timeColor}">${smartDate}</span>
+                        </div>`}
+                    </div>
+                `;
+                container.appendChild(div);
+            }
+
+            if (msgs.length > existingCount && isAtBottom) {
+                scrollToBottom();
+            }
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('messages-list');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function saveAISettings() {
+            const btn = document.getElementById('save-ai-btn');
+            btn.innerHTML = `<div class="w-5 h-5 mx-auto border-2 border-black border-t-transparent rounded-full animate-spin"></div>`;
+            const req = {
+                api_key: document.getElementById('ai-api-key').value,
+                system_prompt: document.getElementById('ai-system-prompt').value,
+                knowledge_base: document.getElementById('ai-knowledge-base').value,
+                read_delay: parseInt(document.getElementById('ai-read-delay').value) || 2,
+                typing_delay: parseInt(document.getElementById('ai-typing-delay').value) || 2
+            };
+            try {
+                await fetch('/api/ai_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify(req)
+                });
+                haptic.success();
+                btn.innerHTML = "Сохранено!";
+                setTimeout(() => { btn.innerHTML = "Сохранить настройки"; }, 2000);
+            } catch (e) {
+                console.error(e);
+                haptic.error();
+                btn.innerHTML = "Ошибка";
+                setTimeout(() => { btn.innerHTML = "Сохранить настройки"; }, 2000);
+            }
+        }
+
+        async function verifyAPIKey() {
+            const btn = document.getElementById('verify-ai-btn');
+            const originalText = btn.innerText;
+            const originalClasses = btn.className;
+
+            btn.innerHTML = `<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>`;
+            btn.disabled = true;
+
+            const apiKey = document.getElementById('ai-api-key').value;
+
+            try {
+                const res = await fetch('/api/ai_settings/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify({ api_key: apiKey })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.status === "ok") {
+                    haptic.success();
+                    btn.innerText = "✅ Работает";
+                    btn.className = "bg-green-500/20 text-green-400 border border-green-500/50 px-4 py-2 rounded-xl transition shadow-sm font-semibold whitespace-nowrap";
+                } else {
+                    haptic.error();
+                    btn.innerText = "❌ Ошибка";
+                    btn.className = "bg-red-50 text-red-600 border border-red-100 px-4 py-2 rounded-xl transition shadow-sm font-semibold whitespace-nowrap";
+                    if (data.message) tg?.showAlert?.(data.message) || alert(data.message);
+                }
+            } catch (e) {
+                haptic.error();
+                btn.innerText = "❌ Ошибка";
+                btn.className = "bg-red-50 text-red-600 border border-red-100 px-4 py-2 rounded-xl transition shadow-sm font-semibold whitespace-nowrap";
+                console.error(e);
+            }
+
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.className = originalClasses;
+                btn.disabled = false;
+            }, 3000);
+        }
+
+        async function loadAISettings() {
+            try {
+                const res = await fetch('/api/ai_settings', { headers: { 'Authorization': getAuthHeader() } });
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('ai-api-key').value = data.api_key;
+                    document.getElementById('ai-system-prompt').value = data.system_prompt;
+                    document.getElementById('ai-knowledge-base').value = data.knowledge_base;
+                    document.getElementById('ai-read-delay').value = data.read_delay !== undefined ? data.read_delay : 2;
+                    document.getElementById('ai-typing-delay').value = data.typing_delay !== undefined ? data.typing_delay : 2;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadOperators() {
+            try {
+                const res = await fetch('/api/operators', { headers: { 'Authorization': getAuthHeader() } });
+                if (res.ok) {
+                    const ops = await res.json();
+                    const container = document.getElementById('operators-list');
+                    if (ops.length === 0) {
+                        container.innerHTML = '<div class="text-center text-theme-muted text-xs mt-4">Нет администраторов</div>';
+                        return;
+                    }
+                    
+                    const existingIds = new Set();
+                    ops.forEach((op, index) => {
+                        const elId = `operator-${op.id}`;
+                        existingIds.add(elId);
+                        let el = document.getElementById(elId);
+                        
+                        if (el) {
+                            el.querySelector('.op-identity').textContent = op.identity;
+                        } else {
+                            el = document.createElement('div');
+                            el.id = elId;
+                            el.className = "glass-card p-3 rounded-xl flex justify-between items-center";
+                            
+                            el.innerHTML = `
+                                <div class="flex items-center gap-2">
+                                    <span class="op-identity font-semibold text-[#1a1a2e]"></span>
+                                    ${op.is_super ? '<span class="text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded">🛡️ Супер</span>' : ''}
+                                </div>
+                                ${op.is_super ? '' : `<button class="btn-delete text-red-400 p-1 hover:bg-red-500/20 rounded-lg transition" title="Удалить">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                </button>`}
+                            `;
+                            el.querySelector('.op-identity').textContent = op.identity;
+                            if (!op.is_super) {
+                                el.querySelector('.btn-delete').onclick = () => deleteOperator(op.id);
+                            }
+                        }
+                        
+                        if (container.children[index] !== el) {
+                            container.insertBefore(el, container.children[index] || null);
+                        }
+                    });
+                    
+                    Array.from(container.children).forEach(child => {
+                        if (!existingIds.has(child.id)) child.remove();
+                    });
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function addOperator() {
+            const input = document.getElementById('new-operator-identity');
+            const val = input.value.trim();
+            if (!val) return;
+            const btn = document.getElementById('add-operator-btn');
+            btn.innerHTML = `<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>`;
+            try {
+                await fetch('/api/operators', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify({ identity: val })
+                });
+                input.value = '';
+                haptic.success();
+                await loadOperators();
+            } catch (e) { console.error(e); }
+            btn.innerHTML = "Добавить";
+        }
+
+        async function deleteOperator(id) {
+            haptic.medium();
+            if(!(await tgConfirm("Удалить администратора?"))) return;
+            try {
+                await fetch(`/api/operators/${id}`, { method: 'DELETE', headers: { 'Authorization': getAuthHeader() } });
+                await loadOperators();
+            } catch (e) { console.error(e); }
+        }
+
+        async function forceAIReply() {
+            if (!currentChatId) return;
+            haptic.medium();
+            const btn = document.getElementById('chat-ai-force-btn');
+            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+            btn.disabled = true;
+            try {
+                const res = await fetch(`/api/chats/${currentChatId}/generate_ai`, { method: 'POST', headers: { 'Authorization': getAuthHeader() } });
+                const data = await res.json();
+                if (data.status === 'ok' && data.text) {
+                    const input = document.getElementById('messageInput');
+                    input.value = data.text;
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                } else {
+                    tg?.showAlert?.(data.message || 'ИИ не смог сгенерировать ответ') || alert(data.message || 'ИИ не смог сгенерировать ответ');
+                }
+            } catch (e) { console.error(e); tg?.showAlert?.('Ошибка генерации ИИ') || alert('Ошибка генерации ИИ'); }
+            btn.innerHTML = 'AI';
+            btn.disabled = false;
+        }
+
+        async function toggleChatAI() {
+            if (!currentChatId) return;
+            haptic.medium();
+            
+            const icon = document.getElementById('chat-ai-toggle-icon');
+            const toggleBtn = document.getElementById('chat-ai-toggle-btn');
+            
+            const chat = allChatsData.find(c => c.chat_id === currentChatId);
+            const originalPaused = chat ? chat.ai_paused : false;
+            const optimisticPaused = !originalPaused;
+            
+            if (chat) chat.ai_paused = optimisticPaused;
+            if (optimisticPaused) {
+                icon.style.opacity = '0.4';
+                icon.classList.remove('lightning-fire');
+                toggleBtn.classList.remove('text-theme-accent');
+                toggleBtn.classList.add('text-theme-muted');
+            } else {
+                icon.style.opacity = '1';
+                icon.classList.add('lightning-fire');
+                toggleBtn.classList.remove('text-theme-muted');
+                toggleBtn.classList.add('text-theme-accent');
+            }
+            renderChats();
+
+            try {
+                const res = await fetch(`/api/chats/${currentChatId}/toggle_ai`, { method: 'POST', headers: { 'Authorization': getAuthHeader() } });
+                const data = await res.json();
+                
+                if (chat) chat.ai_paused = data.ai_paused;
+                
+                if (data.ai_paused) {
+                    icon.style.opacity = '0.4';
+                    icon.classList.remove('lightning-fire');
+                    toggleBtn.classList.remove('text-theme-accent');
+                    toggleBtn.classList.add('text-theme-muted');
+                } else {
+                    icon.style.opacity = '1';
+                    icon.classList.add('lightning-fire');
+                    toggleBtn.classList.remove('text-theme-muted');
+                    toggleBtn.classList.add('text-theme-accent');
+                }
+                renderChats();
+            } catch (e) {
+                if (chat) chat.ai_paused = originalPaused;
+                if (originalPaused) {
+                    icon.style.opacity = '0.4';
+                    icon.classList.remove('lightning-fire');
+                    toggleBtn.classList.remove('text-theme-accent');
+                    toggleBtn.classList.add('text-theme-muted');
+                } else {
+                    icon.style.opacity = '1';
+                    icon.classList.add('lightning-fire');
+                    toggleBtn.classList.remove('text-theme-muted');
+                    toggleBtn.classList.add('text-theme-accent');
+                }
+                renderChats();
+                haptic.error();
+                console.error(e); 
+            }
+        }
+
+        async function resumeChatAI() {
+            toggleChatAI();
+        }
+
+        async function openChat(chatId, leadName, businessConnId, isHighPriority, isAiPaused = false) {
+            haptic.light();
+            currentChatId = chatId;
+            currentBusinessConnId = businessConnId;
+            isCurrentChatHighPriority = isHighPriority;
+
+            document.getElementById('chat-header-name').innerText = leadName;
+            document.getElementById('chat-header-avatar').innerHTML = `<img src="/static/avatars/${chatId}.jpg" class="absolute inset-0 w-full h-full object-cover rounded-full z-10" onerror="this.style.display='none'"><span class="z-0 relative">${leadName.charAt(0)}</span>`;
+            updatePriorityIcon();
+
+            const icon = document.getElementById('chat-ai-toggle-icon');
+            const toggleBtn = document.getElementById('chat-ai-toggle-btn');
+            if (isAiPaused) {
+                icon.style.opacity = '0.4';
+                icon.classList.remove('lightning-fire');
+                toggleBtn.classList.remove('text-theme-accent');
+                toggleBtn.classList.add('text-theme-muted');
+            } else {
+                icon.style.opacity = '1';
+                icon.classList.add('lightning-fire');
+                toggleBtn.classList.remove('text-theme-muted');
+                toggleBtn.classList.add('text-theme-accent');
+            }
+
+            // Native Telegram BackButton
+            navStack.push('chat');
+            try { tg?.BackButton?.show(); } catch(e) {}
+            history.pushState({ view: 'chat' }, '');
+
+            const chatView = document.getElementById('view-chat');
+            chatView.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    chatView.classList.add('slide-open');
+                });
+            });
+
+
+            stopMessagePolling();
+            
+            const container = document.getElementById('messages-list');
+            
+            const el = document.getElementById(`chat-${chatId}`);
+            if (el && el._prefetch) {
+                container.innerHTML = getSkeletonCards(3);
+                const msgs = await el._prefetch;
+                el._prefetch = null;
+                if (msgs) {
+                    renderMessages(msgs);
+                } else {
+                    container.innerHTML = getSkeletonCards(3);
+                    fetchMessages(chatId).then(() => setTimeout(scrollToBottom, 50));
+                }
+            } else {
+                container.innerHTML = getSkeletonCards(3);
+                fetchMessages(chatId).then(() => setTimeout(scrollToBottom, 50));
+            }
+
+            startMessagePolling(chatId);
+        }
+
+        function closeChat(fromPopstate = false, swipeOffset = 0) {
+            if (!navStack.includes('chat')) return;
+            haptic.light();
+            currentChatId = null;
+            navStack = navStack.filter(v => v !== 'chat');
+            
+            if (navStack.length === 0) {
+                try { tg?.BackButton?.hide(); } catch(e) {}
+            }
+            if (!fromPopstate) {
+                try { history.back(); } catch(e) {}
+            }
+
+            const chatView = document.getElementById('view-chat');
+            const startX = swipeOffset || 0;
+            const anim = chatView.animate([
+                { transform: `translateX(${startX}px)` },
+                { transform: 'translateX(100%)' }
+            ], { duration: swipeOffset ? 200 : 300, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' });
+            
+            anim.onfinish = () => {
+                chatView.classList.remove('slide-open');
+                chatView.classList.add('hidden');
+                chatView.style.transform = '';
+                anim.cancel();
+                fetchChats(true);
+            };
+
+            stopMessagePolling();
+        }
+
+        function updatePriorityIcon() {
+            const icon = document.getElementById('chat-priority-icon');
+            const btn = document.getElementById('chat-priority-btn');
+            if (isCurrentChatHighPriority) {
+                icon.setAttribute("fill", "currentColor");
+                icon.classList.remove("text-theme-muted");
+                icon.classList.add("text-yellow-400");
+                btn.classList.remove("text-theme-muted");
+                btn.classList.add("text-yellow-400");
+            } else {
+                icon.setAttribute("fill", "none");
+                icon.classList.remove("text-yellow-400");
+                icon.classList.add("text-theme-muted");
+                btn.classList.remove("text-yellow-400");
+                btn.classList.add("text-theme-muted");
+            }
+        }
+
+        async function togglePriority() {
+            if (!currentChatId) return;
+            haptic.medium();
+            
+            isCurrentChatHighPriority = !isCurrentChatHighPriority;
+            updatePriorityIcon();
+            
+            try {
+                const res = await fetch(`/api/chats/${currentChatId}/priority`, {
+                    method: 'POST',
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                const data = await res.json();
+                isCurrentChatHighPriority = data.is_high_priority;
+                updatePriorityIcon();
+                fetchChats(); 
+            } catch (e) { 
+                isCurrentChatHighPriority = !isCurrentChatHighPriority;
+                updatePriorityIcon();
+                haptic.error();
+                console.error(e); 
+            }
+        }
+
+        let selectedFile = null;
+
+        function handleMediaSelect(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                clearMediaSelection();
+                return;
+            }
+            selectedFile = file;
+
+            const previewContainer = document.getElementById('media-preview-container');
+            const previewImg = document.getElementById('media-preview-img');
+            const previewIcon = document.getElementById('media-preview-icon');
+
+            previewContainer.classList.remove('hidden');
+            previewContainer.classList.add('flex');
+
+            if (file.type.startsWith('image/')) {
+                previewImg.src = URL.createObjectURL(file);
+                previewImg.classList.remove('hidden');
+                previewIcon.classList.add('hidden');
+            } else {
+                previewImg.classList.add('hidden');
+                previewIcon.classList.remove('hidden');
+                previewIcon.classList.add('flex');
+            }
+        }
+
+        function clearMediaSelection() {
+            selectedFile = null;
+            document.getElementById('mediaInput').value = '';
+            const previewContainer = document.getElementById('media-preview-container');
+            previewContainer.classList.add('hidden');
+            previewContainer.classList.remove('flex');
+            
+            const previewImg = document.getElementById('media-preview-img');
+            if (previewImg.src) {
+                URL.revokeObjectURL(previewImg.src);
+            }
+            previewImg.src = '';
+        }
+
+        document.getElementById('sendForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('messageInput');
+            const msgText = input.value.trim();
+
+            if (!currentChatId || (!msgText && !selectedFile)) return;
+
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.innerHTML = `<div class="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>`;
+
+            input.value = '';
+            haptic.light();
+
+            let tempId = null;
+            if (msgText) {
+                tempId = 'msg-temp-' + Date.now();
+                const messagesContainer = document.getElementById('messages-list');
+                const tempBubble = document.createElement('div');
+                tempBubble.id = tempId;
+                tempBubble.className = 'message-bubble self-end flex max-w-[88%] animate-fade-in mb-1';
+                tempBubble.innerHTML = `
+                  <div class="msg-out text-[#1a1a2e] font-medium rounded-2xl rounded-tr-sm py-2.5 px-3.5 relative overflow-hidden" style="opacity:0.7">
+                    <div class="text-[14.5px] whitespace-pre-wrap">${msgText.replace(/</g, '&lt;')}</div>
+                    <div class="flex items-center justify-end mt-1 gap-1">
+                      <span class="text-[10px] text-[#475569]">отправка...</span>
+                    </div>
+                  </div>`;
+                messagesContainer.appendChild(tempBubble);
+                scrollToBottom();
+            }
+
+            try {
+                if (selectedFile) {
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    formData.append('business_connection_id', currentBusinessConnId);
+
+                    const uploadRes = await fetch(`/api/upload/${currentChatId}`, {
+                        method: 'POST',
+                        headers: { 'Authorization': getAuthHeader() },
+                        body: formData
+                    });
+                    if (!uploadRes.ok) {
+                        const errData = await uploadRes.json().catch(() => ({}));
+                        throw new Error(errData.message || `Upload failed: ${uploadRes.status}`);
+                    }
+                    clearMediaSelection();
+                }
+
+                if (msgText) {
+                    await fetch(`/api/send/${currentChatId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': getAuthHeader()
+                        },
+                        body: JSON.stringify({ business_connection_id: currentBusinessConnId, text: msgText })
+                    });
+                }
+
+                if (tempId) document.getElementById(tempId)?.remove();
+                fetchMessages(currentChatId).then(() => setTimeout(scrollToBottom, 50));
+                fetchChats(true);
+            } catch (err) {
+                console.error(err);
+                if (tempId) document.getElementById(tempId)?.remove();
+                haptic.error();
+                tg?.showAlert?.('Ошибка при отправке!') || alert("Ошибка при отправке!");
+            } finally {
+                sendBtn.innerHTML = `<svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>`;
+            }
+        });
+
+        
+        function showScreen(screen) {
+            switchTab(screen);
+        }
+
+        // --- TEST AI LOGIC ---
+        let currentTestChatId = null;
+        let allTestChatsData = [];
+        let testChatMessages = {};
+
+        async function loadTestChats() {
+            try {
+                const res = await fetch('/api/test_ai/chats', { headers: { 'Authorization': getAuthHeader() } });
+                if (!res.ok) return;
+                allTestChatsData = await res.json();
+                renderTestChats();
+            } catch (e) { console.error(e); }
+        }
+
+        function renderTestChats() {
+            const container = document.getElementById('test-chats-list');
+            if (allTestChatsData.length === 0) {
+                container.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10">Нет тестовых чатов</div>';
+                return;
+            }
+            
+            const existingIds = new Set();
+            
+            allTestChatsData.forEach((chat, index) => {
+                const elId = `test-chat-${chat.id}`;
+                existingIds.add(elId);
+                let el = document.getElementById(elId);
+                
+                if (el) {
+                    el.querySelector('.test-chat-name').textContent = chat.name;
+                    el.querySelector('.test-chat-msg-count').textContent = `${chat.message_count} msg`;
+                    el.querySelector('.test-chat-last-msg').textContent = chat.last_message || '...';
+                } else {
+                    el = document.createElement('div');
+                    el.id = elId;
+                    el.className = "flex items-center gap-3 p-3 mb-2 rounded-2xl solid-card cursor-pointer";
+                    
+                    el.innerHTML = `
+                        <div class="w-12 h-12 bg-gradient-to-br from-green-400 to-teal-600 rounded-full flex items-center justify-center font-bold text-white text-lg relative shrink-0 shadow-lg">
+                            🧪
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-start mb-1">
+                                <span class="test-chat-name font-bold text-[15px] truncate text-[#1a1a2e]"></span>
+                                <span class="test-chat-msg-count text-[11px] text-theme-muted font-medium shrink-0 ml-2"></span>
+                            </div>
+                            <div class="test-chat-last-msg text-[13px] text-theme-muted truncate pr-2 mt-1"></div>
+                        </div>
+                    `;
+                    el.querySelector('.test-chat-name').textContent = chat.name;
+                    el.querySelector('.test-chat-msg-count').textContent = `${chat.message_count} msg`;
+                    el.querySelector('.test-chat-last-msg').textContent = chat.last_message || '...';
+                }
+                
+                el.onclick = () => openTestChat(chat.id, chat.name);
+                
+                if (container.children[index] !== el) {
+                    container.insertBefore(el, container.children[index] || null);
+                }
+            });
+            
+            Array.from(container.children).forEach(child => {
+                if (!existingIds.has(child.id)) child.remove();
+            });
+        }
+
+        async function createTestChat() {
+            const name = prompt("Имя тестового лида (или пусто):");
+            if (name === null) return;
+            const firstMsg = prompt("Первое сообщение от рабочего акка (или пусто — ИИ сгенерирует сам):");
+            if (firstMsg === null) return;
+            try {
+                const btn = event.target;
+                const oldText = btn.innerText;
+                btn.innerText = '⏳';
+                btn.disabled = true;
+                
+                const resp = await fetch('/api/test_ai/chats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify({ name: name || undefined, first_message: firstMsg || undefined })
+                });
+                const data = await resp.json();
+                
+                btn.innerText = oldText;
+                btn.disabled = false;
+                
+                if (data.first_message) {
+                    testChatMessages[data.id] = [{ role: 'assistant', content: data.first_message }];
+                }
+                
+                loadTestChats();
+                openTestChat(data.id, data.name || name || 'Тест');
+            } catch (e) { console.error(e); }
+        }
+
+        async function deleteCurrentTestChat() {
+            if (!currentTestChatId) return;
+            if (!(await tgConfirm("Удалить этот тестовый чат?"))) return;
+            try {
+                await fetch(`/api/test_ai/chats/${currentTestChatId}`, { method: 'DELETE', headers: { 'Authorization': getAuthHeader() } });
+                delete testChatMessages[currentTestChatId];
+                closeTestChat();
+                loadTestChats();
+            } catch (e) { console.error(e); }
+        }
+
+        async function openTestChat(id, name) {
+            haptic.light();
+            currentTestChatId = id;
+            document.getElementById('test-chat-header-name').innerText = name;
+            
+            // Native Telegram BackButton
+            navStack.push('test-chat');
+            try { tg?.BackButton?.show(); } catch(e) {}
+            history.pushState({ view: 'test-chat' }, '');
+
+            const chatView = document.getElementById('view-test-ai-chat');
+            chatView.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    chatView.classList.add('slide-open');
+                });
+            });
+
+
+            try {
+                const resp = await fetch(`/api/test_ai/chats/${id}/messages`, {
+                    headers: { 'Authorization': getAuthHeader() }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    testChatMessages[id] = (data.messages || []).map(m => ({
+                        role: m.role, content: m.content
+                    }));
+                } else {
+                    testChatMessages[id] = [];
+                }
+            } catch (e) {
+                if (!testChatMessages[id]) testChatMessages[id] = [];
+            }
+            document.getElementById('test-messages-list').innerHTML = '';
+            renderTestMessages();
+        }
+
+        function closeTestChat(fromPopstate = false, swipeOffset = 0) {
+            if (!navStack.includes('test-chat')) return;
+            haptic.light();
+            currentTestChatId = null;
+            navStack = navStack.filter(v => v !== 'test-chat');
+            
+            if (navStack.length === 0) {
+                try { tg?.BackButton?.hide(); } catch(e) {}
+            }
+            if (!fromPopstate) {
+                try { history.back(); } catch(e) {}
+            }
+
+            const chatView = document.getElementById('view-test-ai-chat');
+            const startX = swipeOffset || 0;
+            const anim = chatView.animate([
+                { transform: `translateX(${startX}px)` },
+                { transform: 'translateX(100%)' }
+            ], { duration: swipeOffset ? 200 : 300, easing: 'cubic-bezier(0.32, 0.72, 0, 1)', fill: 'forwards' });
+            
+            anim.onfinish = () => {
+                chatView.classList.remove('slide-open');
+                chatView.classList.add('hidden');
+                chatView.style.transform = '';
+                anim.cancel();
+                loadTestChats();
+            };
+        }
+
+        function renderTestMessages() {
+            const container = document.getElementById('test-messages-list');
+            const msgs = testChatMessages[currentTestChatId] || [];
+            
+            const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+            
+            if (msgs.length === 0) {
+                container.innerHTML = '<div class="text-center text-xs text-theme-muted mt-20 glass-card px-4 py-2 rounded-full w-fit mx-auto">Нет сообщений. Напишите, чтобы начать диалог.</div>';
+                return;
+            }
+
+            const currentMsgElements = container.querySelectorAll('.test-message-item');
+            if (msgs.length < currentMsgElements.length || (currentMsgElements.length === 0 && !container.querySelector('.test-message-item'))) {
+                container.innerHTML = '';
+            }
+            
+            const existingCount = container.querySelectorAll('.test-message-item').length;
+            
+            for (let i = existingCount; i < msgs.length; i++) {
+                const m = msgs[i];
+                const el = document.createElement('div');
+                el.className = 'test-message-item w-full flex flex-col';
+                
+                if (m.type === 'tag') {
+                    if (m.tag_type === 'escalate') {
+                        el.innerHTML = `<div class="mx-auto my-2 px-3 py-1.5 bg-red-100 border border-red-200 text-red-600 rounded-xl text-xs font-bold text-center max-w-[85%]">⚠️ ЭСКАЛАЦИЯ: ${m.reason}</div>`;
+                    } else if (m.tag_type === 'lead_ready') {
+                        const d = m.data || {};
+                        el.innerHTML = `<div class="mx-auto my-2 px-4 py-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-xs max-w-[85%] shadow-sm">
+                            <div class="font-bold text-green-700 mb-2 flex items-center justify-center gap-1"><span class="text-sm">🚀</span> ЛИД ГОТОВ</div>
+                            <table class="w-full text-left">
+                                ${d.name ? `<tr><td class="pr-2 py-0.5 font-semibold text-green-600/70">Имя:</td><td class="font-medium">${d.name}</td></tr>` : ''}
+                                ${d.phone ? `<tr><td class="pr-2 py-0.5 font-semibold text-green-600/70">Тел:</td><td class="font-medium">${d.phone}</td></tr>` : ''}
+                                ${d.dob ? `<tr><td class="pr-2 py-0.5 font-semibold text-green-600/70">ДР:</td><td class="font-medium">${d.dob}</td></tr>` : ''}
+                                ${d.citizenship ? `<tr><td class="pr-2 py-0.5 font-semibold text-green-600/70">Гражд:</td><td class="font-medium">${d.citizenship}</td></tr>` : ''}
+                                ${d.transport ? `<tr><td class="pr-2 py-0.5 font-semibold text-green-600/70">Транс:</td><td class="font-medium">${d.transport}</td></tr>` : ''}
+                            </table>
+                        </div>`;
+                    } else if (m.tag_type === 'silence') {
+                        el.innerHTML = `<div class="mx-auto my-2 px-3 py-1.5 bg-gray-100 border border-gray-200 text-gray-500 rounded-xl text-xs font-medium text-center max-w-[85%]">🤫 ИИ промолчал</div>`;
+                    }
+                } else {
+                    const isOut = m.role === 'user';
+                    const alignOuter = isOut ? 'self-end' : 'self-start flex-row';
+                    const bgClass = isOut ? 'msg-out text-[#1a1a2e] font-medium' : 'msg-in text-[#1a1a2e]';
+                    const radiusObj = isOut ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm';
+
+                    el.innerHTML = `
+                    <div class="message-bubble ${alignOuter} flex max-w-[88%] animate-fade-in mb-1">
+                        <div class="${bgClass} ${radiusObj} py-2.5 px-3.5 relative overflow-hidden">
+                            <div class="text-[14.5px] whitespace-pre-wrap">${m.content || ''}</div>
+                        </div>
+                    </div>
+                    `;
+                }
+                
+                container.appendChild(el);
+            }
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        let testDebounceTimer = null;
+
+        function getTestDebounceDelay(text) {
+            const len = text.length;
+            const hasQuestion = text.includes('?');
+            if (len < 30 && !hasQuestion) return 7000 + Math.random() * 2000; 
+            if (len < 80) return 5000 + Math.random() * 1500; 
+            return 3500 + Math.random() * 1500; 
+        }
+
+        document.getElementById('testSendForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('testMessageInput');
+            const text = input.value.trim();
+            if (!currentTestChatId || !text) return;
+
+            haptic.light();
+
+            if (!testChatMessages[currentTestChatId]) testChatMessages[currentTestChatId] = [];
+            testChatMessages[currentTestChatId].push({ role: 'user', content: text });
+            renderTestMessages();
+            input.value = '';
+
+            try {
+                await fetch(`/api/test_ai/chats/${currentTestChatId}/message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify({ message: text, no_ai: true })
+                });
+            } catch (err) {
+                console.error('Failed to save message:', err);
+            }
+
+            if (testDebounceTimer) clearTimeout(testDebounceTimer);
+
+            const loading = document.getElementById('test-ai-loading');
+            loading.classList.remove('hidden');
+            loading.querySelector('div + span, div ~ *') || (loading.innerHTML = '<div class="w-4 h-4 border-2 border-theme-accent border-t-transparent rounded-full animate-spin"></div> Ожидание ещё сообщений...');
+
+            const delay = getTestDebounceDelay(text);
+            const chatIdForTimer = currentTestChatId;
+
+            testDebounceTimer = setTimeout(async () => {
+                loading.innerHTML = '<div class="w-4 h-4 border-2 border-theme-accent border-t-transparent rounded-full animate-spin"></div> ИИ думает...';
+                
+                // Show native progress in MainButton
+                try { tg?.MainButton?.setText('ИИ думает...').showProgress(false).show(); } catch(e) {}
+
+                try {
+                    const res = await fetch(`/api/test_ai/chats/${chatIdForTimer}/trigger_ai`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() }
+                    });
+                    const data = await res.json();
+                    
+                    if (data.display && testChatMessages[chatIdForTimer]) {
+                        const chunks = data.display.split('|||').map(c => c.trim()).filter(c => c);
+                        for (const chunk of chunks) {
+                            testChatMessages[chatIdForTimer].push({ role: 'assistant', content: chunk });
+                        }
+                    }
+                    
+                    if (data.tags && data.tags.length > 0 && testChatMessages[chatIdForTimer]) {
+                        for (const tag of data.tags) {
+                            testChatMessages[chatIdForTimer].push({ type: 'tag', tag_type: tag.type, reason: tag.reason, data: tag.data });
+                        }
+                    }
+                    
+                    if (data.is_silence && testChatMessages[chatIdForTimer] && (!data.tags || !data.tags.find(t => t.type === 'silence'))) {
+                        testChatMessages[chatIdForTimer].push({ type: 'tag', tag_type: 'silence' });
+                    }
+
+                    renderTestMessages();
+                } catch (err) {
+                    console.error(err);
+                    tg?.showAlert?.("Ошибка при запросе ИИ") || alert("Ошибка при запросе ИИ");
+                } finally {
+                    loading.classList.add('hidden');
+                    loading.innerHTML = '<div class="w-4 h-4 border-2 border-theme-accent border-t-transparent rounded-full animate-spin"></div> ИИ думает...';
+                    try { tg?.MainButton?.hideProgress().hide(); } catch(e) {}
+                }
+            }, delay);
+        });
+
+        const bottomNav = document.querySelector('nav.glass-nav');
+        const aiSettingsView = document.getElementById('view-ai-settings');
+        
+        document.addEventListener('focusin', (e) => {
+            const el = e.target;
+            if (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && aiSettingsView.contains(el))) {
+                if (aiSettingsView.contains(el)) {
+                    bottomNav.style.display = 'none';
+                    aiSettingsView.classList.remove('pb-28');
+                    aiSettingsView.classList.add('pb-4');
+                    setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+                }
+            }
+        });
+        
+        document.addEventListener('focusout', (e) => {
+            const el = e.target;
+            if (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && aiSettingsView.contains(el))) {
+                if (aiSettingsView.contains(el)) {
+                    bottomNav.style.display = '';
+                    aiSettingsView.classList.add('pb-28');
+                    aiSettingsView.classList.remove('pb-4');
+                }
+            }
+        });
+
+
+        // === CLOUD STORAGE CACHING ===
+        function cacheChatsToCloud(data) {
+            try {
+                tg?.CloudStorage?.setItem('cached_chats', JSON.stringify(data));
+            } catch(e) {}
+        }
+
+        function loadCachedChats(callback) {
+            try {
+                tg?.CloudStorage?.getItem('cached_chats', (err, val) => {
+                    if (!err && val) {
+                        try {
+                            const data = JSON.parse(val);
+                            if (Array.isArray(data) && data.length > 0) {
+                                callback(data);
+                            }
+                        } catch(e) {}
+                    }
+                });
+            } catch(e) {}
+        }
+
+        // === SMART POLLING ===
+        function startSmartPolling() {
+            const ACTIVE_INTERVAL = 4000;
+            const IDLE_INTERVAL = 10000;
+            const IDLE_THRESHOLD = 30000;
+            
+            let lastUserAction = Date.now();
+            
+            ['touchstart', 'click', 'keydown'].forEach(evt => {
+                document.addEventListener(evt, () => { lastUserAction = Date.now(); }, { passive: true });
+            });
+            
+            document.addEventListener('visibilitychange', () => {
+                isPollingActive = !document.hidden;
+            });
+            
+            async function poll() {
+                if (!isPollingActive || isFetching) {
+                    schedulePoll();
+                    return;
+                }
+                
+                isFetching = true;
+                try {
+                    await fetchChats();
+                } finally {
+                    isFetching = false;
+                }
+                schedulePoll();
+            }
+            
+            function schedulePoll() {
+                const isIdle = (Date.now() - lastUserAction) > IDLE_THRESHOLD;
+                const interval = isIdle ? IDLE_INTERVAL : ACTIVE_INTERVAL;
+                setTimeout(poll, interval);
+            }
+            
+            poll();
+        }
+
+        // Initial Data Fetch — use CloudStorage for instant load
+        const chatsContainer = document.getElementById('chats-list');
+        if (chatsContainer) chatsContainer.innerHTML = getSkeletonCards(5);
+
+        // Try loading cached chats for instant display (0ms)
+        loadCachedChats((cachedData) => {
+            if (cachedData && allChatsData.length === 0) {
+                allChatsData = cachedData;
+                lastChatsDataString = JSON.stringify(cachedData);
+                renderChats();
+            }
+        });
+
+        // Refresh avatars on startup (background)
+        fetch('/api/refresh_avatars', {
+            method: 'POST',
+            headers: { 'Authorization': getAuthHeader() }
+        }).catch(() => {});
+
+        fetchAccounts();
+        startSmartPolling();
+    </script>
+</body>
+</html>

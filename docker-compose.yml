@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # ═══════════════════════════════════════════
+  # WARP Proxy — Cloudflare WARP в режиме SOCKS5
+  # Обходит блокировку Telegram API на российских VPS
+  # Все боты подключаются через socks5://warp:1080
+  # ═══════════════════════════════════════════
+  warp:
+    image: caomingjun/warp:latest
+    container_name: warp-proxy
+    restart: always
+    environment:
+      - WARP_SLEEP=2
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - warp_data:/var/lib/cloudflare-warp
+    networks:
+      - botnet
+    healthcheck:
+      test: ["CMD", "curl", "-x", "socks5h://127.0.0.1:1080", "-s", "https://www.cloudflare.com/cdn-cgi/trace"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ═══════════════════════════════════════════
+  # CRM Bot — Telegram CRM System
+  # Aiogram 3.15+ | FastAPI | SQLite | DeepSeek AI
+  # Порт: 8000 | Webhook-режим
+  # ═══════════════════════════════════════════
+  crm-bot:
+    build:
+      context: ./crm_bot
+      dockerfile: Dockerfile
+    container_name: crm-bot
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./crm_bot/.env
+    environment:
+      - PROXY_URL=socks5://warp:1080
+    volumes:
+      # Persist SQLite database
+      - ./crm_bot/crm_data.db:/app/crm_data.db
+      # Persist avatars & media
+      - ./crm_bot/frontend/avatars:/app/frontend/avatars
+      - ./crm_bot/frontend/media:/app/frontend/media
+      # Persist logs
+      - crm_logs:/app/logs
+    depends_on:
+      warp:
+        condition: service_healthy
+    networks:
+      - botnet
+
+  # ═══════════════════════════════════════════
+  # TG Combiner — Parser + Mass Sender + WebApp
+  # Pyrogram (MTProto) | FastAPI | WebSocket | Gemini AI
+  # Порт: 8080 | Long-polling через Pyrogram
+  # ═══════════════════════════════════════════
+  tg-combiner:
+    build:
+      context: ./tg_combiner
+      dockerfile: Dockerfile
+    container_name: tg-combiner
+    restart: always
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./tg_combiner/.env
+    environment:
+      - SOCKS5_HOST=warp
+      - SOCKS5_PORT=1080
+    volumes:
+      # Persist Pyrogram sessions (CRITICAL — authorized accounts)
+      - ./tg_combiner/sessions:/app/sessions
+      # Persist admins list
+      - ./tg_combiner/admins.json:/app/admins.json
+      # Persist contacts database
+      - ./tg_combiner/contacts.json:/app/contacts.json
+    depends_on:
+      warp:
+        condition: service_healthy
+    networks:
+      - botnet
+
+volumes:
+  crm_logs:
+  warp_data:
+
+networks:
+  botnet:
+    driver: bridge
