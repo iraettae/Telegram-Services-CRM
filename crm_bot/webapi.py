@@ -324,7 +324,7 @@ def register_routes(app, ctx):
         return JSONResponse({"status": "ok", "queued": len(missing), "total": len(ids_to_check)})
 
     @app.get("/api/test_ai/chats", dependencies=[Depends(verify_init_data)])
-    def api_test_ai_list():
+    async def api_test_ai_list():
         """Список тест-чатов"""
         result = []
         for cid, chat in test_chats.items():
@@ -391,7 +391,7 @@ def register_routes(app, ctx):
         })
 
     @app.delete("/api/test_ai/chats/{chat_id}", dependencies=[Depends(verify_init_data)])
-    def api_test_ai_delete(chat_id: str):
+    async def api_test_ai_delete(chat_id: str):
         """Удалить тест-чат"""
         if chat_id in test_chats:
             del test_chats[chat_id]
@@ -399,7 +399,7 @@ def register_routes(app, ctx):
         return JSONResponse({"status": "error", "message": "Чат не найден"}, status_code=404)
 
     @app.get("/api/test_ai/chats/{chat_id}/messages", dependencies=[Depends(verify_init_data)])
-    def api_test_ai_get_messages(chat_id: str):
+    async def api_test_ai_get_messages(chat_id: str):
         """Получить сообщения тест-чата"""
         if chat_id not in test_chats:
             return JSONResponse({"status": "error", "message": "Чат не найден"}, status_code=404)
