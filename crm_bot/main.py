@@ -630,13 +630,13 @@ async def telegram_webhook(request: Request):
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 @app.get("/")
-async def get_index():
+def get_index():
     with open("frontend/index.html", "r", encoding="utf-8") as f:
         html_content = f.read()
     return HTMLResponse(content=html_content, status_code=200)
 
 @app.get("/health")
-async def health_check():
+def health_check():
     """Liveness/readiness: проверяем доступность БД. Используется healthcheck'ом Docker."""
     try:
         conn = connect_db()
@@ -718,7 +718,7 @@ def verify_init_data(request: Request):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 @app.get("/api/accounts", dependencies=[Depends(verify_init_data)])
-async def api_get_accounts():
+def api_get_accounts():
     """Получить список подключенных рабочих аккаунтов"""
     conn = connect_db()
     c = conn.cursor()
@@ -772,7 +772,7 @@ import uuid as uuid_module
 test_chats = {}  # {chat_id: {"name": str, "messages": [{role, content}], "created_at": str}}
 
 @app.get("/api/test_ai/chats", dependencies=[Depends(verify_init_data)])
-async def api_test_ai_list():
+def api_test_ai_list():
     """Список тест-чатов"""
     result = []
     for cid, chat in test_chats.items():
@@ -839,7 +839,7 @@ async def api_test_ai_create(request: Request):
     })
 
 @app.delete("/api/test_ai/chats/{chat_id}", dependencies=[Depends(verify_init_data)])
-async def api_test_ai_delete(chat_id: str):
+def api_test_ai_delete(chat_id: str):
     """Удалить тест-чат"""
     if chat_id in test_chats:
         del test_chats[chat_id]
@@ -847,7 +847,7 @@ async def api_test_ai_delete(chat_id: str):
     return JSONResponse({"status": "error", "message": "Чат не найден"}, status_code=404)
 
 @app.get("/api/test_ai/chats/{chat_id}/messages", dependencies=[Depends(verify_init_data)])
-async def api_test_ai_get_messages(chat_id: str):
+def api_test_ai_get_messages(chat_id: str):
     """Получить сообщения тест-чата"""
     if chat_id not in test_chats:
         return JSONResponse({"status": "error", "message": "Чат не найден"}, status_code=404)
@@ -984,7 +984,7 @@ async def _trigger_test_ai(chat_id: str, chat: dict):
 
 
 @app.get("/api/chats", dependencies=[Depends(verify_init_data)])
-async def api_get_chats():
+def api_get_chats():
     """Получить список всех чатов (лидов)"""
     conn = connect_db()
     c = conn.cursor()
@@ -1037,7 +1037,7 @@ async def api_get_chats():
     return JSONResponse(chats)
 
 @app.get("/api/messages/{chat_id}", dependencies=[Depends(verify_init_data)])
-async def api_get_messages(chat_id: int):
+def api_get_messages(chat_id: int):
     """Получить историю сообщений для конкретного чата"""
     conn = connect_db()
     c = conn.cursor()
@@ -1236,7 +1236,7 @@ async def api_upload_media(chat_id: int, business_connection_id: str = Form(...)
 
 
 @app.post("/api/chats/{chat_id}/read", dependencies=[Depends(verify_init_data)])
-async def api_read_chat(chat_id: int):
+def api_read_chat(chat_id: int):
     """Отметить чат как прочитанный"""
     conn = connect_db()
     c = conn.cursor()
@@ -1246,7 +1246,7 @@ async def api_read_chat(chat_id: int):
     return JSONResponse({"status": "ok"})
 
 @app.post("/api/chats/{chat_id}/unread", dependencies=[Depends(verify_init_data)])
-async def api_unread_chat(chat_id: int):
+def api_unread_chat(chat_id: int):
     """Сбросить статус прочтения (Невидимка) - пометить чат как непрочитанный"""
     conn = connect_db()
     c = conn.cursor()
@@ -1256,7 +1256,7 @@ async def api_unread_chat(chat_id: int):
     return JSONResponse({"status": "ok"})
 
 @app.post("/api/chats/{chat_id}/priority", dependencies=[Depends(verify_init_data)])
-async def api_priority_chat(chat_id: int):
+def api_priority_chat(chat_id: int):
     """Переключить метку High Priority для чата"""
     conn = connect_db()
     c = conn.cursor()
@@ -1270,7 +1270,7 @@ async def api_priority_chat(chat_id: int):
 
 # ----------------- AI SETTINGS ENDPOINTS -----------------
 @app.post("/api/accounts/{account_id}/toggle_ai", dependencies=[Depends(verify_init_data)])
-async def api_toggle_account_ai(account_id: str):
+def api_toggle_account_ai(account_id: str):
     """Включить/выключить ИИ для конкретного аккаунта"""
     conn = connect_db()
     c = conn.cursor()
@@ -1286,7 +1286,7 @@ async def api_toggle_account_ai(account_id: str):
     return JSONResponse({"status": "ok", "ai_enabled": bool(val)})
 
 @app.post("/api/chats/{chat_id}/resume_ai", dependencies=[Depends(verify_init_data)])
-async def api_resume_chat_ai(chat_id: int):
+def api_resume_chat_ai(chat_id: int):
     """Снять чат с паузы ИИ (разрешить ИИ снова отвечать)"""
     conn = connect_db()
     c = conn.cursor()
@@ -1365,7 +1365,7 @@ async def api_generate_ai_text(chat_id: int):
         return JSONResponse({"status": "error", "message": "ИИ не смог сгенерировать ответ"}, status_code=500)
 
 @app.post("/api/chats/{chat_id}/toggle_ai", dependencies=[Depends(verify_init_data)])
-async def api_toggle_chat_ai(chat_id: int):
+def api_toggle_chat_ai(chat_id: int):
     """(Пользовательское) Включить/выключить ИИ для конкретного чата (переключает ai_paused)"""
     conn = connect_db()
     c = conn.cursor()
@@ -1377,7 +1377,7 @@ async def api_toggle_chat_ai(chat_id: int):
     return JSONResponse({"status": "ok", "ai_paused": bool(val)})
 
 @app.get("/api/ai_settings", dependencies=[Depends(verify_init_data)])
-async def api_get_ai_settings():
+def api_get_ai_settings():
     """Получить глобальные настройки ИИ"""
     conn = connect_db()
     c = conn.cursor()
@@ -1403,7 +1403,7 @@ class AISettingsRequest(BaseModel):
     typing_delay: int = 2
 
 @app.post("/api/ai_settings", dependencies=[Depends(verify_init_data)])
-async def api_update_ai_settings(req: AISettingsRequest):
+def api_update_ai_settings(req: AISettingsRequest):
     """Обновить глобальные настройки ИИ"""
     conn = connect_db()
     c = conn.cursor()
@@ -1447,7 +1447,7 @@ async def api_verify_ai_key(req: VerifyKeyRequest):
 
 # ----------------- OPERATORS ENDPOINTS -----------------
 @app.get("/api/operators", dependencies=[Depends(verify_init_data)])
-async def api_get_operators():
+def api_get_operators():
     """Получить список всех операторов"""
     conn = connect_db()
     c = conn.cursor()
@@ -1460,7 +1460,7 @@ class OperatorRequest(BaseModel):
     identity: str
 
 @app.post("/api/operators", dependencies=[Depends(verify_init_data)])
-async def api_add_operator(req: OperatorRequest):
+def api_add_operator(req: OperatorRequest):
     """Добавить оператора"""
     identity = req.identity.strip()
     if not identity:
@@ -1483,7 +1483,7 @@ async def api_add_operator(req: OperatorRequest):
     return JSONResponse({"status": "ok"})
 
 @app.delete("/api/operators/{op_id}", dependencies=[Depends(verify_init_data)])
-async def api_delete_operator(op_id: int):
+def api_delete_operator(op_id: int):
     """Удалить оператора по ID в БД"""
     conn = connect_db()
     c = conn.cursor()
@@ -1499,7 +1499,7 @@ async def api_delete_operator(op_id: int):
 
 # ----------------- LEADS ENDPOINTS (Фаза 1: воронка) -----------------
 @app.get("/api/leads", dependencies=[Depends(verify_init_data)])
-async def api_get_leads():
+def api_get_leads():
     """Все лиды с этапами — для канбан-доски."""
     conn = connect_db()
     c = conn.cursor()
@@ -1527,7 +1527,7 @@ async def api_get_leads():
     return JSONResponse({"stages": LEAD_STAGES, "leads": leads})
 
 @app.get("/api/leads/stats", dependencies=[Depends(verify_init_data)])
-async def api_leads_stats():
+def api_leads_stats():
     """Счётчики по этапам воронки (для сводки над доской)."""
     conn = connect_db()
     c = conn.cursor()
@@ -1541,7 +1541,7 @@ class LeadStageRequest(BaseModel):
     stage: str
 
 @app.post("/api/leads/{chat_id}/stage", dependencies=[Depends(verify_init_data)])
-async def api_set_lead_stage(chat_id: int, req: LeadStageRequest):
+def api_set_lead_stage(chat_id: int, req: LeadStageRequest):
     """Перевести лида на другой этап (перетаскивание карточки в канбане)."""
     if req.stage not in LEAD_STAGES:
         return JSONResponse({"status": "error", "message": "Неизвестный этап"}, status_code=400)
@@ -1558,7 +1558,7 @@ async def api_set_lead_stage(chat_id: int, req: LeadStageRequest):
 
 # ----------------- KNOWLEDGE BASE (самообучение) -----------------
 @app.get("/api/kb_gaps", dependencies=[Depends(verify_init_data)])
-async def api_get_kb_gaps():
+def api_get_kb_gaps():
     """Очередь «подтвердить в базу знаний»: вопросы-эскалации, на которые
     оператор уже ответил, ждут одного клика для добавления в KB."""
     conn = connect_db()
@@ -1571,7 +1571,7 @@ async def api_get_kb_gaps():
     return JSONResponse(gaps)
 
 @app.post("/api/kb_gaps/{gap_id}/approve", dependencies=[Depends(verify_init_data)])
-async def api_approve_kb_gap(gap_id: int):
+def api_approve_kb_gap(gap_id: int):
     """Добавляет пару Вопрос/Ответ в базу знаний AI и закрывает пробел."""
     conn = connect_db()
     c = conn.cursor()
@@ -1591,7 +1591,7 @@ async def api_approve_kb_gap(gap_id: int):
     return JSONResponse({"status": "ok"})
 
 @app.post("/api/kb_gaps/{gap_id}/dismiss", dependencies=[Depends(verify_init_data)])
-async def api_dismiss_kb_gap(gap_id: int):
+def api_dismiss_kb_gap(gap_id: int):
     """Отклонить кандидата (не добавлять в базу знаний)."""
     conn = connect_db()
     c = conn.cursor()
