@@ -249,8 +249,12 @@ JSON будет автоматически вырезан вместе с тег
                 max_tokens=1024,
             )
             reply_text = response.choices[0].message.content
+            # Пуленепробиваемо убираем длинное/среднее тире — классический маркер
+            # ИИ. Промпт просит того же, но модель иногда проскакивает; здесь гарантия.
+            if reply_text:
+                reply_text = reply_text.replace("—", "-").replace("–", "-")
             return reply_text
-            
+
         except openai.RateLimitError as e:
             logger.warning(f"RateLimitError. Ждем 20 секунд перед повтором (Попытка {attempt+1}/3)... {e}")
             await asyncio.sleep(20)
