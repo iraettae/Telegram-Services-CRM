@@ -214,9 +214,82 @@ def init_db():
         for op in OPERATORS:
             c.execute('INSERT OR IGNORE INTO operators (identity) VALUES (?)', (str(op),))
 
+    # --- ТАБЛИЦА ЛИДОВ (Фаза 1: фундамент воронки) ---
+    # chat_id PRIMARY KEY = естественная дедупликация (один лид = одна строка),
+    # чтобы повторный [LEAD_READY] не создавал двойной счёт за одного курьера.
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS leads (
+            chat_id INTEGER PRIMARY KEY,
+            business_connection_id TEXT,
+            phone TEXT,
+            full_name TEXT,
+            dob TEXT,
+            citizenship TEXT,
+            transport TEXT,
+            source_account TEXT,
+            stage TEXT DEFAULT 'ready',
+            assigned_operator TEXT,
+            outcome TEXT,
+            drop_reason TEXT,
+            exported INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            stage_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("База данных инициализирована.")
+
+
+# Допустимые этапы воронки (порядок = порядок канбан-колонок)
+LEAD_STAGES = ["new", "dialog", "ready", "onboarding", "on_line", "paid", "lost"]
+
+
+def upsert_lead(chat_id: int, business_connection_id: str, data: dict, source_account: str = "") -> bool:
+    """Создаёт/обновляет лида по chat_id. Возвращает True, если лид НОВЫЙ
+    (для идемпотентности уведомлений/выгрузки). Пустые поля не затирают
+    ранее собранные значения."""
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("SELECT chat_id FROM leads WHERE chat_id = ?", (chat_id,))
+    is_new = c.fetchone() is None
+    vals = (
+        (data.get("phone") or "").strip(),
+        (data.get("name") or data.get("full_name") or "").strip(),
+        (data.get("dob") or "").strip(),
+        (data.get("citizenship") or "").strip(),
+        (data.get("transport") or "").strip(),
+    )
+    if is_new:
+        c.execute(
+            '''INSERT INTO leads (chat_id, business_connection_id, phone, full_name,
+               dob, citizenship, transport, source_account, stage)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ready')''',
+            (chat_id, business_connection_id, *vals, source_account),
+        )
+    else:
+        # COALESCE(NULLIF(?, ''), col) — не перетираем непустое пустым
+        c.execute(
+            '''UPDATE leads SET
+                 phone       = COALESCE(NULLIF(?,''), phone),
+                 full_name   = COALESCE(NULLIF(?,''), full_name),
+                 dob         = COALESCE(NULLIF(?,''), dob),
+                 citizenship = COALESCE(NULLIF(?,''), citizenship),
+                 transport   = COALESCE(NULLIF(?,''), transport)
+               WHERE chat_id = ?''',
+            (*vals, chat_id),
+        )
+    conn.commit()
+    conn.close()
+    return is_new
+
+
+def mark_lead_exported(chat_id: int) -> None:
+    conn = connect_db()
+    conn.execute("UPDATE leads SET exported = 1 WHERE chat_id = ?", (chat_id,))
+    conn.commit()
+    conn.close()
 
 
 # ----------------- СТАРЫЙ КОД (BOT LOGIC) -----------------
@@ -1487,6 +1560,63 @@ async def api_delete_operator(op_id: int):
     conn.commit()
     conn.close()
     return JSONResponse({"status": "ok"})
+
+# ----------------- LEADS ENDPOINTS (Фаза 1: воронка) -----------------
+@app.get("/api/leads", dependencies=[Depends(verify_init_data)])
+async def api_get_leads():
+    """Все лиды с этапами — для канбан-доски."""
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute('''
+        SELECT l.chat_id, l.phone, l.full_name, l.dob, l.citizenship, l.transport,
+               l.stage, l.assigned_operator, l.outcome, l.drop_reason, l.exported,
+               l.created_at, l.stage_changed_at, l.source_account,
+               a.business_name, c.lead_name
+        FROM leads l
+        LEFT JOIN accounts a ON l.business_connection_id = a.business_connection_id
+        LEFT JOIN chats c ON l.chat_id = c.chat_id
+        ORDER BY l.stage_changed_at DESC
+    ''')
+    rows = c.fetchall()
+    conn.close()
+    leads = [{
+        "chat_id": r[0], "phone": r[1], "full_name": r[2] or r[15] or f"Лид {r[0]}",
+        "dob": r[3], "citizenship": r[4], "transport": r[5], "stage": r[6] or "ready",
+        "assigned_operator": r[7], "outcome": r[8], "drop_reason": r[9],
+        "exported": bool(r[10]), "created_at": r[11], "stage_changed_at": r[12],
+        "source_account": r[13], "business_name": r[14] or "—",
+    } for r in rows]
+    return JSONResponse({"stages": LEAD_STAGES, "leads": leads})
+
+@app.get("/api/leads/stats", dependencies=[Depends(verify_init_data)])
+async def api_leads_stats():
+    """Счётчики по этапам воронки (для сводки над доской)."""
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute('SELECT stage, COUNT(*) FROM leads GROUP BY stage')
+    counts = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+    return JSONResponse({"counts": {s: counts.get(s, 0) for s in LEAD_STAGES},
+                         "total": sum(counts.values())})
+
+class LeadStageRequest(BaseModel):
+    stage: str
+
+@app.post("/api/leads/{chat_id}/stage", dependencies=[Depends(verify_init_data)])
+async def api_set_lead_stage(chat_id: int, req: LeadStageRequest):
+    """Перевести лида на другой этап (перетаскивание карточки в канбане)."""
+    if req.stage not in LEAD_STAGES:
+        return JSONResponse({"status": "error", "message": "Неизвестный этап"}, status_code=400)
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("UPDATE leads SET stage = ?, stage_changed_at = CURRENT_TIMESTAMP WHERE chat_id = ?",
+              (req.stage, chat_id))
+    changed = c.rowcount
+    conn.commit()
+    conn.close()
+    if not changed:
+        return JSONResponse({"status": "error", "message": "Лид не найден"}, status_code=404)
+    return JSONResponse({"status": "ok", "stage": req.stage})
 
 # ==============================================================================
 # ОБЩИЙ ЗАПУСК

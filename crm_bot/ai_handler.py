@@ -78,6 +78,41 @@ def extract_lead_ready(reply_text: str):
 # Словарь для хранения активных тасок ожидания генерации ответа (Debounce)
 chat_tasks = {}
 
+
+async def export_lead(chat_id: int, lead_data: dict, business_name: str = ""):
+    """Выгружает готового лида во внешний вебхук (Google Sheets / Bitrix / HR-система
+    службы доставки). URL берётся из LEAD_WEBHOOK_URL в .env. 3 попытки с бэкоффом;
+    при успехе помечает лида exported=1. Идемпотентность гарантирует вызывающий код
+    (экспорт запускается только для нового лида)."""
+    from main import mark_lead_exported
+    url = os.getenv("LEAD_WEBHOOK_URL", "").strip()
+    if not url:
+        return
+    payload = {
+        "chat_id": chat_id,
+        "tg_link": f"tg://user?id={chat_id}",
+        "business_account": business_name,
+        "phone": lead_data.get("phone", ""),
+        "name": lead_data.get("name", ""),
+        "dob": lead_data.get("dob", ""),
+        "citizenship": lead_data.get("citizenship", ""),
+        "transport": lead_data.get("transport", ""),
+    }
+    import aiohttp
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    if r.status < 400:
+                        mark_lead_exported(chat_id)
+                        logger.info(f"Лид {chat_id} выгружен в вебхук (HTTP {r.status})")
+                        return
+                    logger.warning(f"Экспорт лида {chat_id}: HTTP {r.status}")
+        except Exception as e:
+            logger.warning(f"Экспорт лида {chat_id}, попытка {attempt+1}/3: {e}")
+        await asyncio.sleep(2 * (attempt + 1))
+    logger.error(f"Лид {chat_id} НЕ выгружен во внешний вебхук после 3 попыток")
+
 async def read_chat_history(chat_id: int, conn_id: str, message_id: int):
     """
     Симуляция полного прочтения истории чата.
@@ -207,7 +242,7 @@ JSON будет автоматически вырезан вместе с тег
     return None
 
 async def _internal_process_ai_reply(chat_id: int, conn_id: str, user_message: str, lead_name: str, thread_id: str = None, message_id: int = None):
-    from main import bot, DB_FILE, connect_db, save_chat_and_message, update_avatar_if_needed, delayed_send_to_telegram, MASTER_GROUP_ID
+    from main import bot, DB_FILE, connect_db, save_chat_and_message, update_avatar_if_needed, delayed_send_to_telegram, MASTER_GROUP_ID, upsert_lead
     from datetime import datetime
 
     # Human-override guard: за время debounce (до 7-9с) оператор мог ответить
@@ -400,7 +435,14 @@ async def _internal_process_ai_reply(chat_id: int, conn_id: str, user_message: s
             cursor.execute("SELECT identity FROM operators")
             ops = [row[0] for row in cursor.fetchall()]
             conn.close()
-            
+
+            # Сохраняем лида в таблицу leads (chat_id PRIMARY KEY = дедуп).
+            # is_new=False → повторный [LEAD_READY] по тому же чату: не спамим
+            # операторов и не выгружаем повторно (идемпотентность).
+            is_new = upsert_lead(chat_id, conn_id, lead_data, biz_name)
+            if is_new and os.getenv("LEAD_WEBHOOK_URL", "").strip():
+                asyncio.create_task(export_lead(chat_id, lead_data, biz_name))
+
             # Форматируем данные
             phone = lead_data.get('phone', '—')
             full_name = lead_data.get('name', lead_name)
@@ -422,23 +464,25 @@ async def _internal_process_ai_reply(chat_id: int, conn_id: str, user_message: s
                 f"💼 Аккаунт: {html.escape(str(biz_name))}"
             )
 
-            sent_count = 0
-            for op_identity in ops:
-                if op_identity.isdigit():
-                    try:
-                        await bot.send_message(int(op_identity), msg_text, parse_mode="HTML")
-                        sent_count += 1
-                    except Exception as e:
-                        logger.error(f"ОШИБКА отправки уведомления оператору {op_identity}: {e}")
+            # Уведомляем операторов только для НОВОГО лида (идемпотентность).
+            if is_new:
+                sent_count = 0
+                for op_identity in ops:
+                    if op_identity.isdigit():
+                        try:
+                            await bot.send_message(int(op_identity), msg_text, parse_mode="HTML")
+                            sent_count += 1
+                        except Exception as e:
+                            logger.error(f"ОШИБКА отправки уведомления оператору {op_identity}: {e}")
 
-            # Fallback
-            if sent_count == 0:
-                try:
-                    await bot.send_message(MASTER_GROUP_ID, msg_text, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"ОШИБКА отправки резервного уведомления: {e}")
-            
-            logger.info(f"LEAD_READY: chat {chat_id}, data: {lead_data}")
+                # Fallback
+                if sent_count == 0:
+                    try:
+                        await bot.send_message(MASTER_GROUP_ID, msg_text, parse_mode="HTML")
+                    except Exception as e:
+                        logger.error(f"ОШИБКА отправки резервного уведомления: {e}")
+
+            logger.info(f"LEAD_READY: chat {chat_id}, new={is_new}, data: {lead_data}")
 
         # Повторная проверка перед отправкой: оператор мог ответить вручную,
         # пока AI генерировал ответ. Эскалацию не трогаем (там пауза намеренная).

@@ -523,7 +523,19 @@
         </div>
     </div>
 
-    
+    <!-- VIEW: FUNNEL (Канбан лидов) -->
+    <div id="view-funnel" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-hidden">
+        <div class="px-5 pt-5 pb-2 flex items-center justify-between">
+            <h1 class="text-xl font-bold text-[#1a1a2e]">🎯 Воронка</h1>
+            <button onclick="renderFunnel()"
+                class="glass-card text-theme-muted px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap">↻ Обновить</button>
+        </div>
+        <div id="funnel-stats" class="px-5 pb-2 flex gap-2 overflow-x-auto scrollbar-hide text-[11px]"></div>
+        <div id="funnel-board" class="flex-1 overflow-x-auto overflow-y-hidden scrollbar-hide px-4 pb-2 flex gap-3 items-stretch">
+            <div class="text-center text-theme-muted text-xs mt-10 w-full">Загрузка...</div>
+        </div>
+    </div>
+
     <!-- VIEW: TEST AI -->
     <div id="view-test-ai" class="absolute inset-0 flex flex-col pb-28 z-[1] tab-view tab-hidden">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between">
@@ -718,6 +730,17 @@
             <span class="text-[11px] font-semibold whitespace-nowrap">Админы</span>
         </div>
     
+        <div onclick="switchTab('funnel')" id="nav-funnel"
+            class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-[#1a1a2e] transition">
+            <div class="nav-dot relative flex items-center justify-center">
+                <div class="nav-circle"></div>
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M3 4h18v2.5L14 13v6l-4 2v-8L3 6.5V4z"/>
+                </svg>
+            </div>
+            <span class="text-[11px] font-semibold whitespace-nowrap">Воронка</span>
+        </div>
+
         <div onclick="switchTab('test-ai')" id="nav-test-ai"
             class="flex flex-col items-center justify-center flex-1 gap-1 cursor-pointer text-theme-muted hover:text-[#1a1a2e] transition">
             <div class="nav-dot relative flex items-center justify-center">
@@ -845,11 +868,14 @@
         const viewTestAI = document.getElementById('view-test-ai');
         const navTestAI = document.getElementById('nav-test-ai');
 
+        const viewFunnel = document.getElementById('view-funnel');
+        const navFunnel = document.getElementById('nav-funnel');
+
         function switchTab(tabName) {
             haptic.light();
             
-            const allViews = [viewLeads, viewAccounts, viewAISettings, viewOperators, viewTestAI];
-            const allNavs = [navLeads, navAccounts, navAI, navOperators, navTestAI];
+            const allViews = [viewLeads, viewAccounts, viewAISettings, viewOperators, viewTestAI, viewFunnel];
+            const allNavs = [navLeads, navAccounts, navAI, navOperators, navTestAI, navFunnel];
             
             // Hide all tabs with fade
             allViews.forEach(v => {
@@ -867,7 +893,8 @@
                 'accounts':    { view: viewAccounts,   nav: navAccounts,   init: () => fetchAccounts() },
                 'ai-settings': { view: viewAISettings, nav: navAI,         init: () => loadAISettings() },
                 'operators':   { view: viewOperators,  nav: navOperators,  init: () => loadOperators() },
-                'test-ai':     { view: viewTestAI,     nav: navTestAI,     init: () => loadTestChats() }
+                'test-ai':     { view: viewTestAI,     nav: navTestAI,     init: () => loadTestChats() },
+                'funnel':      { view: viewFunnel,     nav: navFunnel,     init: () => renderFunnel() }
             };
             
             const tab = tabMap[tabName];
@@ -880,6 +907,90 @@
                     tab.init();
                 }, 50);
             }
+        }
+
+        // ── Воронка (канбан лидов) ──────────────────────────────────
+        const STAGE_LABELS = {
+            new: '🆕 Новые', dialog: '💬 Диалог', ready: '✅ Готов',
+            onboarding: '📝 Оформление', on_line: '🛵 На линии',
+            paid: '💰 Оплачен', lost: '❌ Отвал'
+        };
+
+        function funnelEsc(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function leadCardHtml(l, stages) {
+            const opts = stages.map(s =>
+                `<option value="${s}" ${s === l.stage ? 'selected' : ''}>${STAGE_LABELS[s] || s}</option>`
+            ).join('');
+            const phone = l.phone ? `📱 ${funnelEsc(l.phone)}` : '<span class="opacity-50">телефон —</span>';
+            const exp = l.exported ? '<span title="Выгружен во внешнюю систему">📤</span>' : '';
+            return `<div class="glass-card rounded-xl p-2.5 flex flex-col gap-1">
+                <div class="flex items-center justify-between gap-1">
+                    <a href="tg://user?id=${l.chat_id}" class="text-[13px] font-semibold text-[#1a1a2e] truncate">${funnelEsc(l.full_name)}</a>
+                    ${exp}
+                </div>
+                <div class="text-[11px] text-theme-muted truncate">${phone}</div>
+                <div class="text-[10px] text-theme-muted truncate">💼 ${funnelEsc(l.business_name)}</div>
+                <select onchange="moveLeadStage(${l.chat_id}, this.value)"
+                    class="mt-1 glass-input text-[#1a1a2e] rounded-lg px-1.5 py-1 text-[11px] outline-none">${opts}</select>
+            </div>`;
+        }
+
+        async function renderFunnel() {
+            const board = document.getElementById('funnel-board');
+            const statsEl = document.getElementById('funnel-stats');
+            board.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10 w-full">Загрузка...</div>';
+            try {
+                const res = await fetch('/api/leads', { headers: { 'Authorization': getAuthHeader() } });
+                const data = await res.json();
+                const stages = data.stages || [];
+                const leads = data.leads || [];
+
+                const counts = {};
+                stages.forEach(s => counts[s] = 0);
+                leads.forEach(l => { counts[l.stage] = (counts[l.stage] || 0) + 1; });
+
+                statsEl.innerHTML = `<span class="glass-card px-2.5 py-1 rounded-full whitespace-nowrap text-theme-muted">Всего: <b class="text-[#1a1a2e]">${leads.length}</b></span>` +
+                    stages.map(s =>
+                        `<span class="glass-card px-2.5 py-1 rounded-full whitespace-nowrap text-theme-muted">${STAGE_LABELS[s] || s}: <b class="text-[#1a1a2e]">${counts[s] || 0}</b></span>`
+                    ).join('');
+
+                if (!leads.length) {
+                    board.innerHTML = '<div class="text-center text-theme-muted text-xs mt-10 w-full">Пока нет лидов. Они появятся здесь автоматически, когда AI поставит тег [LEAD_READY].</div>';
+                    return;
+                }
+
+                board.innerHTML = stages.map(s => {
+                    const items = leads.filter(l => l.stage === s);
+                    const cards = items.map(l => leadCardHtml(l, stages)).join('')
+                        || '<div class="text-theme-muted text-[11px] text-center py-4 opacity-50">пусто</div>';
+                    return `<div class="flex-none w-[240px] flex flex-col glass-panel rounded-2xl p-2">
+                        <div class="px-1 py-1.5 mb-1 flex items-center justify-between">
+                            <span class="text-[12px] font-bold text-[#1a1a2e]">${STAGE_LABELS[s] || s}</span>
+                            <span class="text-[11px] text-theme-muted">${items.length}</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto scrollbar-hide flex flex-col gap-2 pr-0.5">${cards}</div>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                board.innerHTML = `<div class="text-center text-xs mt-10 w-full" style="color:#e5484d;">Ошибка загрузки воронки</div>`;
+            }
+        }
+
+        async function moveLeadStage(chatId, stage) {
+            haptic.selection();
+            try {
+                await fetch(`/api/leads/${chatId}/stage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
+                    body: JSON.stringify({ stage })
+                });
+                renderFunnel();
+            } catch (e) { /* тихо: следующий refresh покажет актуальное */ }
         }
 
         function setFilter(filterName) {
