@@ -161,7 +161,7 @@ async def get_ai_reply(db_api_key: str, system_prompt: str, knowledge_base: str,
         return await _get_ai_reply_impl(db_api_key, system_prompt, knowledge_base, chat_id, user_message, lead_name, business_name, custom_history)
 
 async def _get_ai_reply_impl(db_api_key: str, system_prompt: str, knowledge_base: str, chat_id: int, user_message: str, lead_name: str = "", business_name: str = "", custom_history: list = None):
-    from main import DB_FILE, connect_db
+    from main import offload, fetch_chat_history_rows
     
     # =====================================================================
     # FIX #3: Загружаем историю КОНКРЕТНОГО чата из БД, с разумным лимитом
@@ -174,20 +174,10 @@ async def _get_ai_reply_impl(db_api_key: str, system_prompt: str, knowledge_base
         if user_message and not (history and history[-1]["role"] == "user" and history[-1]["content"] == user_message):
             history.append({"role": "user", "content": user_message})
     else:
-        conn = connect_db()
-        c = conn.cursor()
-        c.execute('''
-            SELECT text, is_outgoing FROM (
-                SELECT text, is_outgoing, timestamp, id
-                FROM messages
-                WHERE chat_id = ?
-                ORDER BY timestamp DESC, id DESC
-                LIMIT 100
-            ) sub ORDER BY timestamp ASC, id ASC
-        ''', (chat_id,))
-        rows = c.fetchall()
-        conn.close()
-        
+        # Читаем историю чата через async-offload (asyncio.to_thread) —
+        # тяжёлый запрос уходит в поток и не блокирует event loop.
+        rows = await offload(fetch_chat_history_rows, chat_id)
+
         # Формируем историю как локальную переменную (изолировано для этого чата)
         history = []
         for text, is_outgoing in rows:
