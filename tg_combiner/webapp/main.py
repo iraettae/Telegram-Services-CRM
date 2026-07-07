@@ -6,12 +6,41 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 from .auth import validate_init_data, validate_auth_token
+
+
+# ── Аутентификация REST-эндпоинтов ─────────────────────────────────────
+# Раньше /api/* были полностью открыты: любой мог слать с аккаунтов,
+# запускать парсер и скачать contacts.json. Принимаем те же креды, что и WS:
+# заголовок Authorization ("tma <initData>" / "token <auth_token>") ИЛИ
+# query-параметры (?tma= / ?token=) — нужно для <img src> аватарок, куда
+# заголовок не подставить.
+def _authorized(init_data: str, auth_token: str) -> bool:
+    if init_data and validate_init_data(init_data):
+        return True
+    if auth_token and validate_auth_token(auth_token):
+        return True
+    return False
+
+
+async def require_auth(request: Request):
+    auth = request.headers.get("Authorization", "")
+    init_data, token = "", ""
+    if auth.startswith("tma "):
+        init_data = auth[4:]
+    elif auth.startswith("token "):
+        token = auth[6:]
+    if not init_data and not token:
+        init_data = request.query_params.get("tma", "")
+        token = request.query_params.get("token", "")
+    if not _authorized(init_data, token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return True
 from .llm import generate_reply
 from config import SESSIONS_DIR
 import config
@@ -21,6 +50,9 @@ ws_logger = logging.getLogger("tg_combiner.webapp")
 
 # Timeout for heavy Pyrogram API calls (seconds)
 _PYROGRAM_TIMEOUT = 30
+
+# Лимит размера загружаемого медиа для рассылки
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 # We need a shared dict of running pyrogram clients from main.py
 running_clients: Dict[str, "Client"] = {} 
@@ -44,6 +76,11 @@ async def serve_app():
         "Pragma": "no-cache",
         "Expires": "0"
     })
+
+@app.get("/health")
+async def health_check():
+    """Liveness для healthcheck Docker."""
+    return {"status": "ok", "sessions": len(running_clients)}
 
 # Avatar cache directory
 _AVATAR_CACHE_DIR = static_dir / "avatars"
@@ -338,7 +375,7 @@ async def _broadcast_dm_progress(payload: dict):
 
 # ── Avatar REST endpoint ───────────────────────────────────────────────
 
-@app.get("/api/avatar/{session_name}/{chat_id}")
+@app.get("/api/avatar/{session_name}/{chat_id}", dependencies=[Depends(require_auth)])
 async def api_get_avatar(session_name: str, chat_id: int):
     """Download and cache avatar photo for a given chat."""
     cache_path = _AVATAR_CACHE_DIR / f"{chat_id}.jpg"
@@ -368,7 +405,7 @@ async def api_get_avatar(session_name: str, chat_id: int):
     return JSONResponse({"error": "no avatar"}, status_code=404)
 
 
-@app.get("/api/contacts")
+@app.get("/api/contacts", dependencies=[Depends(require_auth)])
 async def api_get_contacts():
     import os, json
     db_path = "contacts.json"
@@ -381,7 +418,7 @@ async def api_get_contacts():
             return {"contacts": []}
     return {"contacts": []}
 
-@app.post("/api/direct-send")
+@app.post("/api/direct-send", dependencies=[Depends(require_auth)])
 async def api_direct_send(
     session_name: str = Form(...),
     recipients: str = Form(...),
@@ -406,6 +443,13 @@ async def api_direct_send(
         suffix = Path(file.filename).suffix
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="/tmp")
         content = await file.read()
+        if len(content) > _MAX_UPLOAD_BYTES:
+            tmp.close()
+            try:
+                Path(tmp.name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            return JSONResponse({"error": "Файл слишком большой (макс 50 МБ)"}, status_code=413)
         tmp.write(content)
         tmp.close()
         media_path = tmp.name
@@ -431,7 +475,7 @@ async def api_direct_send(
 
     return {"task_id": task_id, "total": len(recipient_list)}
 
-@app.post("/api/start-parser")
+@app.post("/api/start-parser", dependencies=[Depends(require_auth)])
 async def api_start_parser(payload: dict):
     """
     Launch Smart AI-Parser from WebApp.

@@ -1,10 +1,15 @@
 import hashlib
 import hmac
+import os
+import time
 import urllib.parse
 import json
 import config
 import logging
 logger = logging.getLogger("tg_combiner.webapp.auth")
+
+# TTL валидности initData (сек) — перехваченную строку нельзя переигрывать вечно.
+INIT_DATA_TTL = int(os.getenv("INIT_DATA_TTL", "86400"))
 
 def validate_init_data(init_data: str) -> bool:
     """
@@ -32,12 +37,20 @@ def validate_init_data(init_data: str) -> bool:
         # Calculate confirmation hash
         calculated_hash = hmac.new(secret_key, data_check_string.encode('utf-8'), hashlib.sha256).hexdigest()
         
-        logger.info(f"Auth check hashes match={calculated_hash == received_hash}")
-
-        # Compare
-        if calculated_hash != received_hash:
+        # Timing-safe сравнение
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            logger.info("Auth rejected: hash mismatch")
             return False
-            
+
+        # Проверка свежести initData (защита от бессрочного replay)
+        try:
+            auth_date = int(data_dict.get('auth_date', '0'))
+        except ValueError:
+            auth_date = 0
+        if not auth_date or (time.time() - auth_date) > INIT_DATA_TTL:
+            logger.warning("Auth rejected: initData expired")
+            return False
+
         # Parse User ID
         user_data = json.loads(data_dict.get('user', '{}'))
         user_id = user_data.get('id')

@@ -1060,6 +1060,28 @@
         tg.expand();
         tg.ready();
 
+        // ── Auth для REST-запросов ──────────────────────────────────
+        // /api/* на бэкенде теперь защищены. Передаём те же креды, что и в WS:
+        // заголовок Authorization (для fetch) и query-параметр (для <img src>).
+        function authCred() {
+            const initData = tg.initData || '';
+            const authToken = new URLSearchParams(window.location.search).get('auth_token') || '';
+            return { initData, authToken };
+        }
+        function authHeaders(extra) {
+            const { initData, authToken } = authCred();
+            const h = extra ? Object.assign({}, extra) : {};
+            if (initData) h['Authorization'] = 'tma ' + initData;
+            else if (authToken) h['Authorization'] = 'token ' + authToken;
+            return h;
+        }
+        function authQuery() {
+            const { initData, authToken } = authCred();
+            if (initData) return 'tma=' + encodeURIComponent(initData);
+            if (authToken) return 'token=' + encodeURIComponent(authToken);
+            return '';
+        }
+
         document.documentElement.style.height = '100%';
 
         let ws;
@@ -1244,7 +1266,7 @@
                     document.getElementById('dialog-header').innerText = c.name;
                     // Set avatar in dialog header
                     const avatarImg = document.getElementById('dialog-header-avatar-img');
-                    avatarImg.src = `/api/avatar/${currentSession}/${c.id}`;
+                    avatarImg.src = `/api/avatar/${currentSession}/${c.id}?${authQuery()}`;
                     avatarImg.onerror = () => { avatarImg.removeAttribute('src'); };
                     
                     // Reset status until loaded
@@ -1271,7 +1293,7 @@
                 if (c.has_photo) {
                     avatarHtml = `
                         <div class="w-12 h-12 rounded-full mr-4 shrink-0 relative" style="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);">
-                            <img src="/api/avatar/${currentSession}/${c.id}" class="w-12 h-12 rounded-full object-cover"
+                            <img src="/api/avatar/${currentSession}/${c.id}?${authQuery()}" class="w-12 h-12 rounded-full object-cover"
                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                             <div class="w-12 h-12 rounded-full bg-gradient-to-br ${grad} items-center justify-center text-white font-bold text-lg absolute inset-0" style="display:none;">
                                 ${initials}
@@ -1387,7 +1409,7 @@
 
         async function loadContacts() {
             try {
-                const resp = await fetch('/api/contacts');
+                const resp = await fetch('/api/contacts', { headers: authHeaders() });
                 const data = await resp.json();
                 allContacts = data.contacts || [];
                 renderContactsList();
@@ -1594,7 +1616,7 @@
             try {
                 const response = await fetch('/api/start-parser', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(settings)
                 });
                 
@@ -1750,7 +1772,7 @@
             }
 
             try {
-                const resp = await fetch('/api/direct-send', { method: 'POST', body: formData });
+                const resp = await fetch('/api/direct-send', { method: 'POST', headers: authHeaders(), body: formData });
                 const data = await resp.json();
 
                 if (data.error) {
