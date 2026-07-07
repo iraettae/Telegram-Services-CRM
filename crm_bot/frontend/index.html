@@ -458,6 +458,17 @@
             <h1 class="text-xl font-bold text-[#1a1a2e]">⚙️ Настройки ИИ</h1>
         </div>
         <div class="flex-1 overflow-y-auto scrollbar-hide px-5 pb-4">
+            <!-- Очередь самообучения базы знаний -->
+            <div id="kb-gaps-panel" class="mb-4" style="display:none">
+                <div class="glass-panel rounded-2xl p-4">
+                    <div class="flex items-center justify-between mb-1">
+                        <h2 class="font-bold text-[#1a1a2e] text-sm">🧠 В базу знаний <span id="kb-gaps-count" class="text-theme-muted font-normal"></span></h2>
+                    </div>
+                    <div class="text-theme-muted text-[12px] mb-3 leading-snug">Вопросы, на которые ИИ не знал ответа, а оператор ответил. Подтвердите — и дальше ИИ ответит сам.</div>
+                    <div id="kb-gaps-list" class="flex flex-col gap-2"></div>
+                </div>
+            </div>
+
             <div class="glass-panel rounded-2xl p-5 mb-4">
                 <label class="block text-sm font-bold text-[#1a1a2e] mb-2">API Ключ (OnlySq / DeepSeek-V3)</label>
                 <div class="flex gap-2 mb-4">
@@ -928,10 +939,18 @@
             ).join('');
             const phone = l.phone ? `📱 ${funnelEsc(l.phone)}` : '<span class="opacity-50">телефон —</span>';
             const exp = l.exported ? '<span title="Выгружен во внешнюю систему">📤</span>' : '';
-            return `<div class="glass-card rounded-xl p-2.5 flex flex-col gap-1">
+            const score = l.score || 0;
+            // Балл скоринга: 🔥 горячий, 🟢 тёплый, ⚪ холодный
+            const scoreIcon = score >= 60 ? '🔥' : (score >= 35 ? '🟢' : '⚪');
+            const scoreBadge = `<span title="Скоринг ${score}/100" class="text-[10px] font-bold text-theme-muted whitespace-nowrap">${scoreIcon}${score}</span>`;
+            const flags = (l.fraud_flags || []).length;
+            const dupBadge = (l.is_duplicate || flags)
+                ? `<span title="${l.is_duplicate ? 'Дубль телефона' : 'Проверьте данные'}: ${(l.fraud_flags||[]).join(', ')}" style="color:#c25a06">⚠️</span>`
+                : '';
+            return `<div class="glass-card rounded-xl p-2.5 flex flex-col gap-1" style="${score>=60?'box-shadow:0 0 0 1.5px rgba(217,54,62,.35)':''}">
                 <div class="flex items-center justify-between gap-1">
                     <a href="tg://user?id=${l.chat_id}" class="text-[13px] font-semibold text-[#1a1a2e] truncate">${funnelEsc(l.full_name)}</a>
-                    ${exp}
+                    <span class="flex items-center gap-1 shrink-0">${scoreBadge}${dupBadge}${exp}</span>
                 </div>
                 <div class="text-[11px] text-theme-muted truncate">${phone}</div>
                 <div class="text-[10px] text-theme-muted truncate">💼 ${funnelEsc(l.business_name)}</div>
@@ -1271,8 +1290,9 @@
             }
             el.querySelector('.avatar-text').textContent = chat.lead_name.charAt(0);
             
-            el.querySelector('.lead-name').textContent = chat.lead_name;
-            
+            // 🔥 — горячий лид (высокий скоринг): всплывает вверх списка
+            el.querySelector('.lead-name').textContent = ((chat.score || 0) >= 60 ? '🔥 ' : '') + chat.lead_name;
+
             const starBadge = el.querySelector('.star-badge');
             if (chat.is_high_priority) starBadge.classList.remove('hidden');
             else starBadge.classList.add('hidden');
@@ -1594,6 +1614,45 @@
                     document.getElementById('ai-read-delay').value = data.read_delay !== undefined ? data.read_delay : 2;
                     document.getElementById('ai-typing-delay').value = data.typing_delay !== undefined ? data.typing_delay : 2;
                 }
+            } catch (e) { console.error(e); }
+            loadKbGaps();
+        }
+
+        // ── Самообучающаяся база знаний ──────────────────────────────
+        async function loadKbGaps() {
+            try {
+                const res = await fetch('/api/kb_gaps', { headers: { 'Authorization': getAuthHeader() } });
+                if (!res.ok) return;
+                const gaps = await res.json();
+                const panel = document.getElementById('kb-gaps-panel');
+                const list = document.getElementById('kb-gaps-list');
+                const count = document.getElementById('kb-gaps-count');
+                if (!gaps.length) { panel.style.display = 'none'; return; }
+                panel.style.display = 'block';
+                count.textContent = `(${gaps.length})`;
+                list.innerHTML = gaps.map(g => `
+                    <div class="glass-card rounded-xl p-3 flex flex-col gap-2">
+                        <div class="text-[12px] text-[#1a1a2e]"><b>В:</b> ${funnelEsc(g.question)}</div>
+                        <div class="text-[12px] text-theme-muted"><b>О:</b> ${funnelEsc(g.answer)}</div>
+                        <div class="flex gap-2 mt-1">
+                            <button onclick="approveKbGap(${g.id})" class="glass-btn text-white px-3 py-1.5 rounded-lg text-xs font-bold">✅ В базу</button>
+                            <button onclick="dismissKbGap(${g.id})" class="glass-card text-theme-muted px-3 py-1.5 rounded-lg text-xs font-semibold">Скрыть</button>
+                        </div>
+                    </div>`).join('');
+            } catch (e) { console.error(e); }
+        }
+        async function approveKbGap(id) {
+            haptic.selection();
+            try {
+                await fetch(`/api/kb_gaps/${id}/approve`, { method: 'POST', headers: { 'Authorization': getAuthHeader() } });
+                await loadAISettings();  // перечитываем — база знаний пополнилась
+            } catch (e) { console.error(e); }
+        }
+        async function dismissKbGap(id) {
+            haptic.selection();
+            try {
+                await fetch(`/api/kb_gaps/${id}/dismiss`, { method: 'POST', headers: { 'Authorization': getAuthHeader() } });
+                loadKbGaps();
             } catch (e) { console.error(e); }
         }
 

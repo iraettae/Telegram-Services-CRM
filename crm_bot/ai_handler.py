@@ -113,6 +113,36 @@ async def export_lead(chat_id: int, lead_data: dict, business_name: str = ""):
         await asyncio.sleep(2 * (attempt + 1))
     logger.error(f"Лид {chat_id} НЕ выгружен во внешний вебхук после 3 попыток")
 
+async def send_followup(chat_id: int, conn_id: str, lead_name: str = ""):
+    """Мягкая реактивация молчащего лида: генерирует ОДНО ненавязчивое
+    follow-up сообщение по истории диалога и отправляет его. Теги вырезаются."""
+    from main import connect_db, delayed_send_to_telegram, get_topic, save_chat_and_message
+    conn = connect_db(); c = conn.cursor()
+    c.execute('SELECT api_key, system_prompt, knowledge_base FROM ai_settings WHERE id = 1')
+    cfg = c.fetchone(); conn.close()
+    api_key = cfg[0] if cfg and cfg[0] else ""
+    base_prompt = cfg[1] if cfg else ""
+    kb = cfg[2] if cfg else ""
+    followup_prompt = (base_prompt or "") + (
+        "\n\nВАЖНО: Клиент давно не отвечает. Напиши ОДНО короткое, ненавязчивое "
+        "follow-up сообщение, чтобы мягко вернуть его к разговору о работе курьером. "
+        "Не дави, не извиняйся, не повторяй дословно то, что уже писал."
+    )
+    reply = await get_ai_reply(api_key, followup_prompt, kb, chat_id, "", lead_name)
+    if not reply:
+        return
+    # Вырезаем возможные служебные теги — follow-up должен быть чистым текстом
+    reply, _ = extract_escalation(reply)
+    reply = reply.replace("[SILENCE]", "")
+    reply = re.sub(r'\[LEAD_READY\].*', '', reply, flags=re.DOTALL).strip()
+    if not reply:
+        return
+    thread_id = get_topic(conn_id, chat_id)
+    save_chat_and_message(chat_id, conn_id, lead_name, reply, True)
+    await delayed_send_to_telegram(chat_id, reply, conn_id, thread_id)
+    logger.info(f"Follow-up отправлен лиду {chat_id}")
+
+
 async def read_chat_history(chat_id: int, conn_id: str, message_id: int):
     """
     Симуляция полного прочтения истории чата.
@@ -242,7 +272,7 @@ JSON будет автоматически вырезан вместе с тег
     return None
 
 async def _internal_process_ai_reply(chat_id: int, conn_id: str, user_message: str, lead_name: str, thread_id: str = None, message_id: int = None):
-    from main import bot, DB_FILE, connect_db, save_chat_and_message, update_avatar_if_needed, delayed_send_to_telegram, MASTER_GROUP_ID, upsert_lead
+    from main import bot, DB_FILE, connect_db, save_chat_and_message, update_avatar_if_needed, delayed_send_to_telegram, MASTER_GROUP_ID, upsert_lead, open_kb_gap, lead_export_blocked
     from datetime import datetime
 
     # Human-override guard: за время debounce (до 7-9с) оператор мог ответить
@@ -353,6 +383,12 @@ async def _internal_process_ai_reply(chat_id: int, conn_id: str, user_message: s
                 logger.info(f"ESCALATION: chat {chat_id}, lead: {lead_name}, reason: {escalation_reason}")
                 reply_text = clean_text
                 escalated = True
+                # Фиксируем вопрос как пробел в базе знаний — когда оператор ответит,
+                # его ответ можно будет одним кликом добавить в KB (самообучение).
+                try:
+                    open_kb_gap(chat_id, thread_id, escalation_reason)
+                except Exception as e:
+                    logger.warning(f"Не удалось открыть kb_gap для {chat_id}: {e}")
                 
                 # Атомарное обновление — защита от дублей алертов
                 esc_conn = connect_db()
@@ -440,7 +476,9 @@ async def _internal_process_ai_reply(chat_id: int, conn_id: str, user_message: s
             # is_new=False → повторный [LEAD_READY] по тому же чату: не спамим
             # операторов и не выгружаем повторно (идемпотентность).
             is_new = upsert_lead(chat_id, conn_id, lead_data, biz_name)
-            if is_new and os.getenv("LEAD_WEBHOOK_URL", "").strip():
+            # Дубль (тот же телефон уже есть у другого лида) НЕ выгружаем
+            # автоматически — защита от двойного счёта службе.
+            if is_new and os.getenv("LEAD_WEBHOOK_URL", "").strip() and not lead_export_blocked(chat_id):
                 asyncio.create_task(export_lead(chat_id, lead_data, biz_name))
 
             # Форматируем данные
