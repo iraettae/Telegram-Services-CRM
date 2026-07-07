@@ -44,21 +44,30 @@ _HOT_KEYWORDS = ("зарплат", "оплат", "график", "смен", "в
 
 
 def normalize_phone(phone: str) -> str:
-    """Оставляет только цифры; 8XXXXXXXXXX → 7XXXXXXXXXX для единого ключа дедупа."""
+    """Единый ключ дедупа для российских номеров: 8XXXXXXXXXX и 9XXXXXXXXX
+    (без кода страны) сводятся к 7XXXXXXXXXX, чтобы разные форматы одного
+    номера матчились в анти-фроде."""
     digits = re.sub(r"\D", "", phone or "")
     if len(digits) == 11 and digits.startswith("8"):
         digits = "7" + digits[1:]
+    elif len(digits) == 10:                 # номер без кода страны: 900XXXXXXX
+        digits = "7" + digits
     return digits
 
 
-def compute_lead_score(chat_id: int, lead_data: dict) -> int:
+def compute_lead_score(chat_id: int, lead_data: dict, cursor=None) -> int:
     """Rule-based скоринг «вероятности выйти на линию» из сигналов диалога.
-    Диапазон 0..100. Заменяется обученной моделью позже, когда накопятся исходы."""
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute("SELECT text, is_outgoing FROM messages WHERE chat_id = ?", (chat_id,))
-    rows = c.fetchall()
-    conn.close()
+    Диапазон 0..100. Заменяется обученной моделью позже, когда накопятся исходы.
+    Если передан cursor — переиспользуем его (не открываем 2-е соединение)."""
+    if cursor is not None:
+        cursor.execute("SELECT text, is_outgoing FROM messages WHERE chat_id = ?", (chat_id,))
+        rows = cursor.fetchall()
+    else:
+        conn = connect_db()
+        c = conn.cursor()
+        c.execute("SELECT text, is_outgoing FROM messages WHERE chat_id = ?", (chat_id,))
+        rows = c.fetchall()
+        conn.close()
 
     incoming = [(t or "") for t, out in rows if not out]
     score = 15  # дошёл до LEAD_READY — базовый балл
@@ -74,19 +83,22 @@ def compute_lead_score(chat_id: int, lead_data: dict) -> int:
     return max(0, min(100, score))
 
 
-def _detect_fraud(chat_id: int, phone_norm: str, cursor) -> tuple:
-    """Возвращает (is_duplicate, fraud_flags_csv). Дешёвая защита выручки
-    до выставления счёта службе: один человек на двух аккаунтах = двойной счёт."""
+def _detect_fraud_on_insert(chat_id: int, phone_norm: str, cursor) -> tuple:
+    """Вычисляется ТОЛЬКО при первой вставке лида. Возвращает (is_duplicate, flags).
+    Новый лид с уже существующим у кого-то телефоном = он и есть поздний дубль
+    (первый/легитимный лид был создан раньше и остаётся не-дублем). При повторном
+    upsert флаг НЕ пересчитывается (см. upsert_lead) — иначе честный первый лид
+    ложно помечался бы дублем, а секундной точности created_at для сравнения мало."""
     flags = []
     is_dup = 0
     if phone_norm:
         cursor.execute(
-            "SELECT chat_id FROM leads WHERE phone_normalized = ? AND chat_id != ?",
+            "SELECT 1 FROM leads WHERE phone_normalized = ? AND chat_id != ? LIMIT 1",
             (phone_norm, chat_id),
         )
         if cursor.fetchone():
             is_dup = 1
-            flags.append("dup_phone")       # тот же телефон уже есть у другого лида
+            flags.append("dup_phone")
         if len(phone_norm) < 10:
             flags.append("bad_phone")       # телефон-мусор
     else:
@@ -101,13 +113,17 @@ def upsert_lead(chat_id: int, business_connection_id: str, data: dict, source_ac
     помечает дубли и фрод-флаги."""
     conn = connect_db()
     c = conn.cursor()
-    c.execute("SELECT chat_id FROM leads WHERE chat_id = ?", (chat_id,))
-    is_new = c.fetchone() is None
+    c.execute("SELECT phone_normalized FROM leads WHERE chat_id = ?", (chat_id,))
+    existing = c.fetchone()
+    is_new = existing is None
 
     phone = (data.get("phone") or "").strip()
     phone_norm = normalize_phone(phone)
-    score = compute_lead_score(chat_id, data)
-    is_dup, fraud_flags = _detect_fraud(chat_id, phone_norm, c)
+    # Нет телефона во входящих — переиспользуем ранее сохранённый ключ, чтобы не
+    # терять дедуп и не «обелять» ранее помеченный дубль пустым телефоном.
+    if not phone_norm and existing and existing[0]:
+        phone_norm = existing[0]
+    score = compute_lead_score(chat_id, data, c)   # переиспользуем курсор (без 2-го соединения)
 
     vals = (
         phone,
@@ -117,6 +133,8 @@ def upsert_lead(chat_id: int, business_connection_id: str, data: dict, source_ac
         (data.get("transport") or "").strip(),
     )
     if is_new:
+        # Дубль/фрод вычисляем ОДИН раз — при создании лида.
+        is_dup, fraud_flags = _detect_fraud_on_insert(chat_id, phone_norm, c)
         c.execute(
             '''INSERT INTO leads (chat_id, business_connection_id, phone, full_name,
                dob, citizenship, transport, source_account, stage,
@@ -126,6 +144,9 @@ def upsert_lead(chat_id: int, business_connection_id: str, data: dict, source_ac
              phone_norm, score, is_dup, fraud_flags),
         )
     else:
+        # Повторный [LEAD_READY]: обновляем данные и скоринг, но is_duplicate/
+        # fraud_flags НЕ трогаем (они выставлены при вставке) — иначе честный
+        # первый лид ложно стал бы дублем позднего, а пустой телефон обелил бы дубль.
         c.execute(
             '''UPDATE leads SET
                  phone            = COALESCE(NULLIF(?,''), phone),
@@ -134,11 +155,9 @@ def upsert_lead(chat_id: int, business_connection_id: str, data: dict, source_ac
                  citizenship      = COALESCE(NULLIF(?,''), citizenship),
                  transport        = COALESCE(NULLIF(?,''), transport),
                  phone_normalized = COALESCE(NULLIF(?,''), phone_normalized),
-                 score            = ?,
-                 is_duplicate     = ?,
-                 fraud_flags      = ?
+                 score            = ?
                WHERE chat_id = ?''',
-            (*vals, phone_norm, score, is_dup, fraud_flags, chat_id),
+            (*vals, phone_norm, score, chat_id),
         )
     conn.commit()
     conn.close()
@@ -178,7 +197,10 @@ def open_kb_gap(chat_id: int, thread_id, question: str) -> None:
 
 
 def answer_kb_gap(chat_id: int, operator_answer: str) -> None:
-    """Оператор ответил лиду с открытым пробелом → сохраняем его ответ как кандидат в KB."""
+    """Оператор ответил лиду с открытым пробелом → сохраняем его ответ как кандидат в KB.
+    Ловим только СВЕЖИЙ пробел (эскалация за последние 48ч), чтобы случайное
+    сообщение оператора не привязалось к давно висящему вопросу. Финальный барьер —
+    ручной approve, где оператор видит пару В/О перед добавлением в базу."""
     if not (operator_answer or "").strip():
         return
     conn = connect_db()
@@ -186,6 +208,7 @@ def answer_kb_gap(chat_id: int, operator_answer: str) -> None:
     c.execute(
         """UPDATE kb_gaps SET operator_answer = ?, status = 'answered'
            WHERE id = (SELECT id FROM kb_gaps WHERE chat_id = ? AND status = 'open'
+                       AND created_at > datetime('now', '-48 hours')
                        ORDER BY id DESC LIMIT 1)""",
         (operator_answer.strip()[:1000], chat_id),
     )

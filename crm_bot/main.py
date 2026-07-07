@@ -576,6 +576,14 @@ async def handle_operator_reply(message: Message):
             media_type=media_type,
             media_url=media_url
         )
+        # Оператор ответил вручную через топик → человек взял диалог на себя.
+        # Ставим ai_paused=1 (как и для прямого ответа с аккаунта), иначе AI и
+        # follow-up продолжат писать поверх оператора.
+        conn_p = connect_db()
+        conn_p.execute('UPDATE chats SET ai_paused = 1 WHERE chat_id = ?', (lead_chat_id,))
+        conn_p.commit()
+        conn_p.close()
+
         # Если у чата был открытый пробел в базе знаний (эскалация) — ответ
         # оператора становится кандидатом на добавление в KB (самообучение).
         if op_text.strip():
@@ -1573,11 +1581,10 @@ async def api_approve_kb_gap(gap_id: int):
         conn.close()
         return JSONResponse({"status": "error", "message": "Пробел не найден или уже обработан"}, status_code=404)
     question, answer = row
-    c.execute("SELECT knowledge_base FROM ai_settings WHERE id = 1")
-    kb_row = c.fetchone()
-    kb = (kb_row[0] if kb_row and kb_row[0] else "").rstrip()
     addition = f"\n\nВ: {(question or '').strip()}\nО: {(answer or '').strip()}"
-    c.execute("UPDATE ai_settings SET knowledge_base = ? WHERE id = 1", (kb + addition,))
+    # Дописываем на стороне SQL (|| ?) — без read-modify-write в Python, чтобы
+    # одновременный approve или сохранение настроек не затёрли друг друга (lost update).
+    c.execute("UPDATE ai_settings SET knowledge_base = COALESCE(knowledge_base, '') || ? WHERE id = 1", (addition,))
     c.execute("UPDATE kb_gaps SET status = 'approved' WHERE id = ?", (gap_id,))
     conn.commit()
     conn.close()
@@ -1618,9 +1625,12 @@ async def followup_loop():
                 SELECT c.chat_id, c.business_connection_id, c.lead_name
                 FROM chats c
                 JOIN accounts a ON c.business_connection_id = a.business_connection_id
+                LEFT JOIN leads le ON le.chat_id = c.chat_id
                 WHERE COALESCE(c.ai_paused, 0) = 0
                   AND COALESCE(a.ai_enabled, 0) = 1
                   AND COALESCE(c.followups_sent, 0) < ?
+                  -- не тревожим уже закрытых/оформленных лидов
+                  AND (le.stage IS NULL OR le.stage NOT IN ('paid', 'lost', 'on_line', 'onboarding'))
                   AND (SELECT m.is_outgoing FROM messages m WHERE m.chat_id = c.chat_id ORDER BY m.id DESC LIMIT 1) = 1
                   AND (SELECT m.timestamp FROM messages m WHERE m.chat_id = c.chat_id ORDER BY m.id DESC LIMIT 1) < datetime('now', ?)
             ''', (max_followups, f'-{hours} hours'))
@@ -1630,6 +1640,15 @@ async def followup_loop():
                 logger.info(f"Follow-up: {len(candidates)} молчащих лидов к реактивации")
             for chat_id, conn_id, lead_name in candidates:
                 try:
+                    # Перепроверяем состояние в момент отправки: за время прохода
+                    # (по 8с на кандидата) лид мог ответить или оператор — поставить паузу.
+                    cchk = connect_db(); ck = cchk.cursor()
+                    ck.execute('''SELECT COALESCE(ai_paused,0),
+                                    (SELECT m.is_outgoing FROM messages m WHERE m.chat_id = ? ORDER BY m.id DESC LIMIT 1)
+                                  FROM chats WHERE chat_id = ?''', (chat_id, chat_id))
+                    st = ck.fetchone(); cchk.close()
+                    if not st or st[0] or st[1] != 1:
+                        continue  # чат встал на паузу или лид ответил — не тревожим
                     await send_followup(chat_id, conn_id, lead_name or f"Лид {chat_id}")
                     c2 = connect_db()
                     c2.execute(
