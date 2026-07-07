@@ -1,6 +1,9 @@
-aiogram>=3.15.0
+# Верхние границы мажоров защищают от неожиданного breaking-обновления при
+# пересборке образа. Для полной воспроизводимости зафиксируйте точные версии
+# через `pip freeze > requirements.txt` на рабочем сервере.
+aiogram>=3.15.0,<4
 python-dotenv
-openai>=1.0.0
+openai>=1.0.0,<2
 fastapi
 uvicorn
 aiohttp-socks

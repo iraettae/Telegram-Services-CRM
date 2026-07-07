@@ -40,7 +40,7 @@ from proxy_manager import (
     remove_proxy,
     validate_proxy,
 )
-from device_spoof import get_random_device
+from device_spoof import get_device_for_session
 from modules.sender import get_session_files, run_advanced_mailing
 from modules.parser import run_parser_task
 from modules.smart_parser_menu import register_smart_parser_handlers, handle_smart_parser_text
@@ -988,7 +988,9 @@ def register_handlers(bot: Client):
 
             user_client = None
             try:
-                device = get_random_device()
+                # Фиксируем девайс под финальный stem сессии (без _pending),
+                # чтобы после сохранения учётка не сменила устройство при первом запуске.
+                device = get_device_for_session(session_name)
                 user_client = Client(
                     name=session_path,
                     api_id=API_ID,

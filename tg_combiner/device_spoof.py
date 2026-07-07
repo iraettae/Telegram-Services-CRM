@@ -4,7 +4,14 @@ Generates realistic (device_model, system_version, app_version) tuples
 so Pyrogram clients don't reveal default library signatures.
 """
 
+import json
 import random
+from pathlib import Path
+
+# Отпечаток устройства фиксируется НА СЕССИЮ и персистится здесь: одна учётка
+# всегда подключается с одним device_model. Смена устройства между запусками
+# для давно живущей сессии — сильный сигнал для антифрода Telegram.
+_DEVICE_MAP_FILE = Path(__file__).resolve().parent / "sessions" / "device_map.json"
 
 # ── Pool of realistic device fingerprints ──────────────────────────────
 _DEVICE_POOL: list[dict[str, str]] = [
@@ -60,3 +67,34 @@ def get_random_device() -> dict[str, str]:
     device_model, system_version, app_version.
     """
     return random.choice(_DEVICE_POOL).copy()
+
+
+def _load_device_map() -> dict:
+    try:
+        return json.loads(_DEVICE_MAP_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_device_map(m: dict) -> None:
+    try:
+        _DEVICE_MAP_FILE.parent.mkdir(exist_ok=True)
+        _DEVICE_MAP_FILE.write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def get_device_for_session(session_name: str) -> dict[str, str]:
+    """Стабильный отпечаток устройства для конкретной сессии.
+
+    Первый раз — выбираем случайный и сохраняем; далее всегда возвращаем тот же.
+    Это убирает 'прыжки' device_model одной учётки между запусками рассылки.
+    """
+    m = _load_device_map()
+    dev = m.get(session_name)
+    if isinstance(dev, dict) and {"device_model", "system_version", "app_version"} <= set(dev):
+        return dict(dev)
+    dev = random.choice(_DEVICE_POOL).copy()
+    m[session_name] = dev
+    _save_device_map(m)
+    return dev

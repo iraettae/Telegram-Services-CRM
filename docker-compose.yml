@@ -1,5 +1,12 @@
 version: '3.8'
 
+# Общие настройки ротации логов (иначе json-file растёт без предела и забивает диск VPS)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # ═══════════════════════════════════════════
   # WARP Proxy — Cloudflare WARP в режиме SOCKS5
@@ -10,6 +17,7 @@ services:
     image: caomingjun/warp:latest
     container_name: warp-proxy
     restart: always
+    logging: *default-logging
     environment:
       - WARP_SLEEP=2
     cap_add:
@@ -38,8 +46,10 @@ services:
       dockerfile: Dockerfile
     container_name: crm-bot
     restart: always
+    logging: *default-logging
     ports:
-      - "8000:8000"
+      # Публикуем только на loopback хоста — наружу ходит nginx, а не порт напрямую.
+      - "127.0.0.1:8000:8000"
     env_file:
       - ./crm_bot/.env
     environment:
@@ -52,6 +62,13 @@ services:
       - ./crm_bot/frontend/media:/app/frontend/media
       # Persist logs
       - crm_logs:/app/logs
+    healthcheck:
+      # Ловит зависания (restart:always перезапускает только упавший процесс, а не залипший).
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       warp:
         condition: service_healthy
@@ -69,8 +86,9 @@ services:
       dockerfile: Dockerfile
     container_name: tg-combiner
     restart: always
+    logging: *default-logging
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     env_file:
       - ./tg_combiner/.env
     environment:
@@ -83,9 +101,48 @@ services:
       - ./tg_combiner/admins.json:/app/admins.json
       # Persist contacts database
       - ./tg_combiner/contacts.json:/app/contacts.json
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       warp:
         condition: service_healthy
+    networks:
+      - botnet
+
+  # ═══════════════════════════════════════════
+  # Backup — периодический бэкап критичных данных
+  # crm_data.db (все лиды) + sessions/ (авторизованные аккаунты) + contacts.json
+  # Каждые 6 часов, хранит последние 48 копий. ⚠️ Для катастрофоустойчивости
+  # добавьте выгрузку каталога ./backups в offsite (S3/rsync) отдельным cron на хосте.
+  # ═══════════════════════════════════════════
+  backup:
+    image: alpine:3.20
+    container_name: bot-backup
+    restart: always
+    logging: *default-logging
+    volumes:
+      # crm_bot целиком (rw) — sqlite нужен доступ к -wal/-shm для консистентного .backup
+      - ./crm_bot:/data/crm
+      - ./tg_combiner/sessions:/data/sessions:ro
+      - ./tg_combiner/contacts.json:/data/contacts.json:ro
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache sqlite >/dev/null 2>&1 || true
+        while true; do
+          TS=$$(date +%Y%m%d-%H%M%S)
+          sqlite3 /data/crm/crm_data.db ".backup /backups/crm_data-$$TS.db" 2>/dev/null || cp /data/crm/crm_data.db /backups/crm_data-$$TS.db
+          tar czf /backups/sessions-$$TS.tar.gz -C /data sessions contacts.json 2>/dev/null
+          ls -1t /backups/crm_data-*.db 2>/dev/null | tail -n +49 | xargs -r rm -f
+          ls -1t /backups/sessions-*.tar.gz 2>/dev/null | tail -n +49 | xargs -r rm -f
+          echo "[backup] done $$TS"
+          sleep 21600
+        done
     networks:
       - botnet
 

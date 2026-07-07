@@ -16,7 +16,7 @@ from pyrogram.errors import (
 
 from antiban import AntiBanManager
 from config import API_ID, API_HASH, SESSIONS_DIR
-from device_spoof import get_random_device
+from device_spoof import get_device_for_session
 from proxy_manager import proxy_to_pyrogram
 from spintax import spin
 from core.logger import setup_live_logger
@@ -32,7 +32,7 @@ def get_session_files() -> list[Path]:
     ])
 
 def _make_client(session_path: Path, proxy: Optional[dict] = None) -> Client:
-    device = get_random_device()
+    device = get_device_for_session(session_path.stem)
     session_name = str(session_path.with_suffix(""))
     kwargs: dict = {
         "name": session_name,
@@ -172,6 +172,11 @@ async def run_advanced_mailing(
         if antiban.is_global_exhausted() or target_index >= len(targets):
             break
 
+        # Не берём в работу аккаунт в карантине (недавно словил спамблок).
+        if antiban.is_quarantined(session_name):
+            live_log.warning(f"🚑 `@{session_name}` в карантине — пропускаем")
+            continue
+
         try:
             is_borrowed = False
             if session_name in running_clients:
@@ -245,6 +250,8 @@ async def run_advanced_mailing(
                     live_log.warning(f"🔴 `@{session_name}` | Ошибка: {info}")
                     if "SPAMBLOCK" in info:
                         spam_blocks_streak += 1
+                        # Карантиним аккаунт, чтобы не гнать его снова под перманентный бан.
+                        antiban.quarantine(session_name)
                         target_index += 1  # Skip this target for this session
                         break  # Rotate to next session on spam block
                     else:

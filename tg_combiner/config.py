@@ -33,9 +33,17 @@ PYROGRAM_PROXY: dict = {"scheme": "socks5", "hostname": SOCKS5_HOST, "port": SOC
 
 # ── Default limits ─────────────────────────────────────────────────────
 DEFAULT_GLOBAL_LIMIT: int = 500
-DEFAULT_ACCOUNT_LIMIT: int = 20
+DEFAULT_ACCOUNT_LIMIT: int = 20   # лимит на аккаунт за один прогон рассылки
 DEFAULT_MIN_DELAY: float = 3.0   # seconds
 DEFAULT_MAX_DELAY: float = 10.0  # seconds
+
+# Суточный лимит на аккаунт (переживает рестарт и несколько прогонов за день).
+# Раньше дневного лимита не было вовсе — можно было делать много прогонов по 20.
+DEFAULT_DAILY_LIMIT: int = int(os.getenv("DAILY_ACCOUNT_LIMIT", "40"))
+# Базовый карантин аккаунта после спамблока (сек); растёт при повторных инцидентах.
+QUARANTINE_BASE_SECONDS: int = int(os.getenv("QUARANTINE_BASE_SECONDS", "86400"))
+# Файл здоровья сессий (дневные счётчики, карантин, инциденты)
+SESSION_HEALTH_FILE = SESSIONS_DIR / "session_health.json"
 
 
 def save_admin_id(uid: int) -> None:

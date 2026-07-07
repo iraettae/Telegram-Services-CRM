@@ -48,5 +48,8 @@ tg_combiner/webapp/static/avatars/*
 logs/
 *.log
 
+# Backups (создаются backup-сервисом в docker-compose)
+backups/
+
 # Sensitive info
 tg_combiner/proxies.json

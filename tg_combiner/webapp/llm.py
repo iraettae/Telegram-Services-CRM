@@ -1,4 +1,5 @@
 import os
+import asyncio
 import google.generativeai as genai
 
 # Load API key from env (assumes user has GEMINI_API_KEY in .env)
@@ -30,7 +31,8 @@ async def generate_reply(history_context: str) -> str:
     )
 
     try:
-        response = model.generate_content(prompt)
+        # Синхронный SDK Gemini — уводим в поток, чтобы не блокировать event loop.
+        response = await asyncio.to_thread(model.generate_content, prompt)
         return response.text.strip()
     except Exception as e:
         return f"❌ Ошибка ИИ: {e}"

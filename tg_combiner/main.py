@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import signal
 import uvicorn
 from pyrogram import Client, filters
 import config
@@ -11,7 +12,7 @@ from config import API_ID, API_HASH, BOT_TOKEN
 from webapp.main import app as fastapi_app, running_clients, broadcast_new_message
 from modules.sender import get_session_files
 from proxy_manager import proxy_to_pyrogram
-from device_spoof import get_random_device
+from device_spoof import get_device_for_session
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +31,7 @@ async def load_sessions_for_webapp():
     for s_path in sessions:
         session_name = s_path.stem
         try:
-            device = get_random_device()
+            device = get_device_for_session(session_name)
             client = Client(
                 name=str(s_path.with_suffix("")),
                 api_id=API_ID,
@@ -133,13 +134,28 @@ async def main():
     session_task = asyncio.create_task(load_sessions_for_webapp())
     session_task.add_done_callback(_on_session_load_done)
 
+    # Ловим SIGTERM (docker stop) — иначе finally недостижим и клиенты Pyrogram
+    # убиваются жёстко (риск повреждения .session и переавторизации).
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            pass  # Windows
+
+    runner = asyncio.gather(run_bot(), run_fastapi())
     try:
-        # Run bot and fastapi concurrently
-        await asyncio.gather(
-            run_bot(),
-            run_fastapi()
-        )
+        stop_task = asyncio.create_task(stop.wait())
+        done, _ = await asyncio.wait({runner, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+        if stop_task in done:
+            logger.info("Получен сигнал остановки — graceful shutdown...")
     finally:
+        runner.cancel()
+        try:
+            await runner
+        except BaseException:
+            pass
         await shutdown_all_clients()
 
 if __name__ == "__main__":
