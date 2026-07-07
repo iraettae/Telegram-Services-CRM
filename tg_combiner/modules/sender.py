@@ -17,7 +17,7 @@ from pyrogram.errors import (
 from antiban import AntiBanManager
 from config import API_ID, API_HASH, SESSIONS_DIR
 from device_spoof import get_device_for_session
-from proxy_manager import proxy_to_pyrogram
+from proxy_manager import proxy_to_pyrogram, get_proxy_for_session
 from spintax import spin
 from core.logger import setup_live_logger
 from webapp.main import running_clients
@@ -42,8 +42,11 @@ def _make_client(session_path: Path, proxy: Optional[dict] = None) -> Client:
         "system_version": device["system_version"],
         "app_version": device["app_version"],
     }
-    if proxy:
-        kwargs["proxy"] = proxy_to_pyrogram(proxy)
+    # Приоритет: прокси, ПРИВЯЗАННЫЙ к аккаунту → переданный (общий active_proxy) → WARP.
+    # Так у каждой прогретой учётки свой sticky-IP, и TG не связывает их по адресу.
+    chosen = get_proxy_for_session(session_path.stem) or proxy
+    if chosen:
+        kwargs["proxy"] = proxy_to_pyrogram(chosen)
     else:
         from config import PYROGRAM_PROXY
         kwargs["proxy"] = PYROGRAM_PROXY

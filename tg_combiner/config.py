@@ -44,6 +44,9 @@ DEFAULT_DAILY_LIMIT: int = int(os.getenv("DAILY_ACCOUNT_LIMIT", "40"))
 QUARANTINE_BASE_SECONDS: int = int(os.getenv("QUARANTINE_BASE_SECONDS", "86400"))
 # Файл здоровья сессий (дневные счётчики, карантин, инциденты)
 SESSION_HEALTH_FILE = SESSIONS_DIR / "session_health.json"
+# Привязка прокси к аккаунту: {session_name: {ip,port,user,pass}} — свой sticky-IP
+# на каждую учётку, чтобы Telegram не связывал аккаунты по общему адресу.
+SESSION_PROXY_FILE = SESSIONS_DIR / "session_proxy.json"
 
 
 def save_admin_id(uid: int) -> None:

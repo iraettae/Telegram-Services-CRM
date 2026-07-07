@@ -11,7 +11,7 @@ from config import API_ID, API_HASH, BOT_TOKEN
 # Import FastAPI App
 from webapp.main import app as fastapi_app, running_clients, broadcast_new_message
 from modules.sender import get_session_files
-from proxy_manager import proxy_to_pyrogram
+from proxy_manager import proxy_to_pyrogram, get_proxy_for_session
 from device_spoof import get_device_for_session
 
 logging.basicConfig(
@@ -32,6 +32,8 @@ async def load_sessions_for_webapp():
         session_name = s_path.stem
         try:
             device = get_device_for_session(session_name)
+            # Свой прокси аккаунта (если привязан), иначе общий WARP.
+            bound = get_proxy_for_session(session_name)
             client = Client(
                 name=str(s_path.with_suffix("")),
                 api_id=API_ID,
@@ -39,7 +41,7 @@ async def load_sessions_for_webapp():
                 device_model=device["device_model"],
                 system_version=device["system_version"],
                 app_version=device["app_version"],
-                proxy=config.PYROGRAM_PROXY
+                proxy=proxy_to_pyrogram(bound) if bound else config.PYROGRAM_PROXY
             )
             
             @client.on_message(~filters.me | filters.me)

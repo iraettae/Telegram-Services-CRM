@@ -39,6 +39,10 @@ from proxy_manager import (
     parse_proxy_string,
     remove_proxy,
     validate_proxy,
+    get_proxy_for_session,
+    set_proxy_for_session,
+    unset_proxy_for_session,
+    list_session_proxies,
 )
 from device_spoof import get_device_for_session
 from modules.sender import get_session_files, run_advanced_mailing
@@ -126,6 +130,7 @@ def proxy_submenu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Выбрать из списка", callback_data="proxy_list")],
         [InlineKeyboardButton("➕ Добавить новый", callback_data="proxy_add")],
+        [InlineKeyboardButton("🔗 Прокси на аккаунт", callback_data="proxy_assign")],
         [InlineKeyboardButton("🔙 Назад", callback_data="menu_net")],
     ])
 
@@ -443,6 +448,86 @@ def register_handlers(bot: Client):
                 await cb.answer("❌ Ошибка удаления")
             # Refresh list
             cb.data = "proxy_list"
+            await on_callback(client, cb)
+            return
+
+        # ── Привязка прокси к аккаунту (свой sticky-IP на учётку) ──
+        elif data == "proxy_assign":
+            sessions = get_session_files()
+            if not sessions:
+                await _safe_edit(
+                    cb.message,
+                    "❌ Нет аккаунтов. Сначала добавь сессию.",
+                    reply_markup=proxy_submenu_kb(),
+                )
+                return
+            bindings = list_session_proxies()
+            buttons = []
+            for i, s in enumerate(sessions):
+                p = bindings.get(s.stem)
+                mark = f"🔗 {p['ip']}" if p else "🌐 WARP"
+                buttons.append([InlineKeyboardButton(f"{s.stem} — {mark}", callback_data=f"proxyacc_s_{i}")])
+            buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="proxy_yes")])
+            await _safe_edit(
+                cb.message,
+                "🔗 **Прокси на аккаунт**\n\nУ каждой учётки — свой IP, чтобы TG не связал аккаунты. Выбери аккаунт:",
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+
+        elif data.startswith("proxyacc_s_"):
+            idx = int(data.split("_")[-1])
+            sessions = get_session_files()
+            if idx >= len(sessions):
+                await cb.answer("❌ Аккаунт не найден")
+                return
+            name = sessions[idx].stem
+            proxies = list_proxies()
+            cur = get_proxy_for_session(name)
+            cur_txt = f"🔗 {cur['ip']}:{cur['port']}" if cur else "🌐 WARP (общий)"
+            buttons = []
+            for j, p in enumerate(proxies):
+                buttons.append([InlineKeyboardButton(f"{p['ip']}:{p['port']} ({p['user']})", callback_data=f"proxyacc_set_{idx}_{j}")])
+            if cur:
+                buttons.append([InlineKeyboardButton("🧹 Убрать (вернуть на WARP)", callback_data=f"proxyacc_clear_{idx}")])
+            if not proxies:
+                buttons.append([InlineKeyboardButton("➕ Сначала добавь прокси", callback_data="proxy_add")])
+            buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="proxy_assign")])
+            await _safe_edit(
+                cb.message,
+                f"Аккаунт `{name}`\nСейчас: {cur_txt}\n\nВыбери прокси для этого аккаунта:",
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+
+        elif data.startswith("proxyacc_set_"):
+            parts = data.split("_")  # proxyacc_set_{sidx}_{pidx}
+            sidx, pidx = int(parts[2]), int(parts[3])
+            sessions = get_session_files()
+            proxies = list_proxies()
+            if sidx >= len(sessions) or pidx >= len(proxies):
+                await cb.answer("❌ Не найдено")
+                return
+            name = sessions[sidx].stem
+            proxy = proxies[pidx]
+            await cb.answer("⏳ Проверяю прокси...")
+            ok, msg = await validate_proxy(proxy)
+            if ok:
+                set_proxy_for_session(name, proxy)
+                text = (
+                    f"✅ Прокси `{proxy['ip']}:{proxy['port']}` привязан к аккаунту `{name}`.\n\n"
+                    f"⚠️ Применится после ПЕРЕЗАПУСКА бота — аккаунт заново поднимется уже на этом прокси. "
+                    f"Пока сессия активна, она продолжает работать на старом IP (резкая смена IP на лету — плохой сигнал для TG)."
+                )
+            else:
+                text = f"{msg}\n\nПрокси НЕ привязан."
+            await _safe_edit(cb.message, text, reply_markup=back_main_kb(cb.from_user.id))
+
+        elif data.startswith("proxyacc_clear_"):
+            idx = int(data.split("_")[-1])
+            sessions = get_session_files()
+            if idx < len(sessions):
+                unset_proxy_for_session(sessions[idx].stem)
+                await cb.answer("🧹 Прокси убран — аккаунт вернётся на WARP")
+            cb.data = "proxy_assign"
             await on_callback(client, cb)
             return
 

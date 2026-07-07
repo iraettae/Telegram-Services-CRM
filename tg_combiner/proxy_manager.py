@@ -5,12 +5,13 @@ CRUD operations on proxies.json, IP-info checks via ip-api.com, validation.
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 import httpx
 
-from config import PROXIES_FILE
+from config import PROXIES_FILE, SESSION_PROXY_FILE
 
 logger = logging.getLogger("tg_combiner.proxy")
 
@@ -84,6 +85,61 @@ def proxy_to_pyrogram(proxy: dict) -> dict:
         "username": proxy["user"],
         "password": proxy["pass"],
     }
+
+
+# ── Привязка прокси к аккаунту (session → proxy) ───────────────────────
+# Свой sticky-IP на каждую учётку: Telegram не должен видеть несколько
+# прогретых аккаунтов с одного адреса. Хранится в session_proxy.json.
+
+def _load_session_proxies() -> dict:
+    if not SESSION_PROXY_FILE.exists():
+        return {}
+    try:
+        data = json.loads(SESSION_PROXY_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_session_proxies(mapping: dict) -> None:
+    # Атомарная запись: temp + os.replace. Иначе конкурентный читатель
+    # (get_proxy_for_session при старте сессии) может поймать усечённый JSON →
+    # None → тихий откат аккаунта на общий/WARP IP (нежелательная смена IP).
+    try:
+        SESSION_PROXY_FILE.parent.mkdir(exist_ok=True)
+        tmp = SESSION_PROXY_FILE.with_name(SESSION_PROXY_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, SESSION_PROXY_FILE)
+    except OSError:
+        logger.error("Не удалось сохранить session_proxy.json")
+
+
+def get_proxy_for_session(session_name: str) -> Optional[dict]:
+    """Прокси, привязанный к аккаунту, или None (тогда fallback на WARP)."""
+    proxy = _load_session_proxies().get(session_name)
+    if isinstance(proxy, dict) and {"ip", "port", "user", "pass"} <= set(proxy):
+        return proxy
+    return None
+
+
+def set_proxy_for_session(session_name: str, proxy: dict) -> None:
+    mapping = _load_session_proxies()
+    mapping[session_name] = proxy
+    _save_session_proxies(mapping)
+
+
+def unset_proxy_for_session(session_name: str) -> bool:
+    mapping = _load_session_proxies()
+    if session_name in mapping:
+        del mapping[session_name]
+        _save_session_proxies(mapping)
+        return True
+    return False
+
+
+def list_session_proxies() -> dict:
+    """Вся карта {session_name: proxy} — для отображения в боте."""
+    return _load_session_proxies()
 
 
 # ── Async network checks ──────────────────────────────────────────────
