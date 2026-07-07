@@ -13,6 +13,7 @@ import uvicorn
 import urllib.parse
 import hmac
 import hashlib
+import html
 import json
 import uuid
 from fastapi import FastAPI, Request, Depends, HTTPException, File, UploadFile, Form
@@ -66,7 +67,31 @@ async def log_all_updates(handler, event: Update, data):
     return await handler(event, data)
 
 # База данных SQLite
-DB_FILE = 'crm_data.db'
+DB_FILE = os.getenv("DB_PATH", "crm_data.db")
+
+# Секрет для валидации Telegram webhook (X-Telegram-Bot-Api-Secret-Token).
+# Если не задан явно — детерминированно выводим из BOT_TOKEN, чтобы set_webhook и
+# проверка совпадали без ручной настройки.
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or hashlib.sha256(
+    (BOT_TOKEN + ":webhook").encode()
+).hexdigest()[:48]
+
+# TTL валидности Telegram initData (сек). Перехваченную строку нельзя
+# переигрывать бессрочно. По умолчанию 24 часа.
+INIT_DATA_TTL = int(os.getenv("INIT_DATA_TTL", "86400"))
+
+# Лимит размера загружаемого файла (совпадает с client_max_body_size в nginx).
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+
+
+def connect_db():
+    """Единая точка подключения к SQLite: busy_timeout защищает от
+    мгновенного 'database is locked' под конкуренцией. WAL включается
+    один раз в init_db() и персистится в самом файле БД."""
+    conn = sqlite3.connect(DB_FILE, timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
+
 
 # Создаем папку для загруженных аватарок
 os.makedirs("frontend/avatars", exist_ok=True)
@@ -74,8 +99,12 @@ os.makedirs("frontend/media", exist_ok=True)
 
 def init_db():
     """Создает базу данных и таблицы при первом запуске."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
+    # WAL персистится в заголовке файла БД — включаем один раз при инициализации.
+    # Резко снижает взаимные блокировки читателей/писателей ('database is locked').
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA synchronous=NORMAL")
     # Старая таблица (для форума)
     c.execute('''
         CREATE TABLE IF NOT EXISTS topics (
@@ -142,6 +171,16 @@ def init_db():
         c.execute('ALTER TABLE chats ADD COLUMN ai_paused BOOLEAN DEFAULT 0')
     except sqlite3.OperationalError:
         pass
+    # КРИТИЧНО: эти колонки использовались в коде, но НЕ создавались нигде —
+    # на чистой БД первое же сообщение падало с 'no such column: is_unread'.
+    try:
+        c.execute('ALTER TABLE chats ADD COLUMN is_unread BOOLEAN DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute('ALTER TABLE chats ADD COLUMN is_high_priority BOOLEAN DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
     try:
         c.execute('ALTER TABLE ai_settings ADD COLUMN read_delay INTEGER DEFAULT 2')
     except sqlite3.OperationalError:
@@ -182,7 +221,7 @@ def init_db():
 
 # ----------------- СТАРЫЙ КОД (BOT LOGIC) -----------------
 def get_topic(business_connection_id: str, chat_id: int):
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT message_thread_id FROM topics WHERE business_connection_id = ? AND chat_id = ?', 
               (business_connection_id, chat_id))
@@ -191,7 +230,7 @@ def get_topic(business_connection_id: str, chat_id: int):
     return result[0] if result else None
 
 def save_topic(business_connection_id: str, chat_id: int, message_thread_id: int):
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('''
         INSERT OR REPLACE INTO topics (business_connection_id, chat_id, message_thread_id) 
@@ -201,7 +240,7 @@ def save_topic(business_connection_id: str, chat_id: int, message_thread_id: int
     conn.close()
 
 def get_lead_by_topic(message_thread_id: int):
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT business_connection_id, chat_id FROM topics WHERE message_thread_id = ?',
               (message_thread_id,))
@@ -211,7 +250,7 @@ def get_lead_by_topic(message_thread_id: int):
 
 # ----------------- НОВЫЙ КОД (СОХРАНЕНИЕ -----------------
 def save_account(business_connection_id: str, business_name: str, user_id: int):
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('''
         INSERT OR REPLACE INTO accounts (business_connection_id, business_name, user_id) 
@@ -221,7 +260,7 @@ def save_account(business_connection_id: str, business_name: str, user_id: int):
     conn.close()
 
 def save_chat_and_message(chat_id: int, business_connection_id: str, lead_name: str, text: str, is_outgoing: bool, media_type: str = None, media_url: str = None):
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     # Обновляем инфо о чате
     c.execute('''
@@ -327,7 +366,7 @@ async def cmd_start(message: Message):
         
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть CRM", web_app=WebAppInfo(url="https://crmsystem.example.com/"))]
+            [InlineKeyboardButton(text="Открыть CRM", web_app=WebAppInfo(url=WEBAPP_URL))]
         ]
     )
     await message.answer(
@@ -344,7 +383,7 @@ async def handle_business_connection(event: BusinessConnection):
     business_name = f"{user.first_name} {user.last_name or ''}".strip()
     conn_id = event.id
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     
     if event.is_enabled:
@@ -395,7 +434,7 @@ async def handle_business_message(message: Message):
     chat_id = message.chat.id
     
     # --- НОВЫЙ КОД: Сохраняем аккаунт, чат и сообщение ---
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     try:
         conn_info = await bot.get_business_connection(conn_id)
@@ -471,8 +510,8 @@ async def handle_business_message(message: Message):
                 chat_id=MASTER_GROUP_ID,
                 message_thread_id=thread_id,
                 text=f"🆕 <b>Новый чат создан!</b>\n\n"
-                     f"👤 <b>Лид:</b> {lead_name}\n"
-                     f"💼 <b>Рабочий аккаунт:</b> {business_name}\n"
+                     f"👤 <b>Лид:</b> {html.escape(lead_name or '')}\n"
+                     f"💼 <b>Рабочий аккаунт:</b> {html.escape(business_name or '')}\n"
                      f"🔗 <b>ID чата лида:</b> <code>{chat_id}</code>\n\n"
                      f"<i>💡 Чтобы ответить лиду с рабочего аккаунта, просто напишите сообщение в эту тему.</i>",
                 parse_mode="HTML"
@@ -558,11 +597,19 @@ async def handle_operator_reply(message: Message):
 
 # --- WEBHOOK ENDPOINT для Telegram ---
 WEBHOOK_PATH = "/tg-webhook"
-WEBHOOK_URL = f"https://crmsystem.example.com{WEBHOOK_PATH}"
+# Домен берём из env (PUBLIC_DOMAIN=crmsystem.yourdomain.com), чтобы не забыть
+# поправить хардкод при переносе. example.com оставлен только как явный маркер.
+PUBLIC_DOMAIN = os.getenv("PUBLIC_DOMAIN", "crmsystem.example.com")
+WEBHOOK_URL = f"https://{PUBLIC_DOMAIN}{WEBHOOK_PATH}"
+WEBAPP_URL = os.getenv("WEBAPP_URL", f"https://{PUBLIC_DOMAIN}/")
 
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
     """Принимает обновления от Telegram через webhook"""
+    # Проверяем секретный токен — без него любой мог слать поддельные апдейты.
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:
+        logger.warning("[WEBHOOK] Отклонён запрос с неверным secret-token")
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         data = await request.json()
         update = Update.model_validate(data, context={"bot": bot})
@@ -584,6 +631,30 @@ async def get_index():
         html_content = f.read()
     return HTMLResponse(content=html_content, status_code=200)
 
+@app.get("/health")
+async def health_check():
+    """Liveness/readiness: проверяем доступность БД. Используется healthcheck'ом Docker."""
+    try:
+        conn = connect_db()
+        conn.execute("SELECT 1")
+        conn.close()
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=503)
+
+@app.on_event("shutdown")
+async def _drain_on_shutdown():
+    """При остановке (SIGTERM от docker) даём in-flight debounce-задачам AI
+    до 5 секунд договорить, чтобы не терять ответы лидам при каждом деплое."""
+    try:
+        from ai_handler import chat_tasks
+        pending = [t for t in list(chat_tasks.values()) if not t.done()]
+        if pending:
+            logger.info(f"Shutdown: ждём {len(pending)} debounce-задач AI (до 5с)...")
+            await asyncio.wait(pending, timeout=5)
+    except Exception as e:
+        logger.warning(f"Ошибка при дренаже задач на shutdown: {e}")
+
 def verify_init_data(request: Request):
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("tma "):
@@ -601,39 +672,51 @@ def verify_init_data(request: Request):
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
         secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
         calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-        
-        if calculated_hash != hash_val:
+
+        if not hmac.compare_digest(calculated_hash, hash_val):
             raise ValueError("Invalid hash")
-            
+
+        # Проверяем свежесть initData: перехваченную строку нельзя переигрывать вечно.
+        try:
+            auth_date = int(parsed_data.get("auth_date", "0"))
+        except ValueError:
+            auth_date = 0
+        if not auth_date or (time.time() - auth_date) > INIT_DATA_TTL:
+            raise HTTPException(status_code=401, detail="Unauthorized: initData expired")
+
         # Проверяем доступ (по ID или Username)
         user_str = parsed_data.get("user", "{}")
         user_obj = json.loads(user_str)
         user_id = user_obj.get("id")
         username = ("@" + user_obj.get("username", "")).lower()
         
-        conn = sqlite3.connect(DB_FILE)
+        conn = connect_db()
         c = conn.cursor()
         c.execute('SELECT identity FROM operators')
         db_operators = [row[0] for row in c.fetchall()]
         conn.close()
         
-        if db_operators:
-            if str(user_id) not in db_operators and username not in db_operators:
-                raise HTTPException(status_code=403, detail="Forbidden: User not in DB operators")
-                
+        # Fail-closed: пустой список операторов = запретить всё
+        # (раньше пустая таблица открывала доступ любому пользователю Telegram).
+        if not db_operators:
+            raise HTTPException(status_code=403, detail="Forbidden: no operators configured")
+        if str(user_id) not in db_operators and username not in db_operators:
+            raise HTTPException(status_code=403, detail="Forbidden: User not in DB operators")
+
         return user_obj
         
     except ValueError as ve:
         logger.warning(f"Ошибка валидации initData (ValueError): {ve}")
         raise HTTPException(status_code=401, detail=f"Unauthorized: {ve}")
     except Exception as e:
-        logger.warning(f"Ошибка валидации initData: {e}, initData string was: {init_data}")
+        # Не логируем полную initData — это фактически ключ доступа.
+        logger.warning(f"Ошибка валидации initData: {e}")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 @app.get("/api/accounts", dependencies=[Depends(verify_init_data)])
 async def api_get_accounts():
     """Получить список подключенных рабочих аккаунтов"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('''
         SELECT business_connection_id, business_name, user_id, ai_enabled 
@@ -647,7 +730,7 @@ async def api_get_accounts():
 @app.post("/api/refresh_avatars", dependencies=[Depends(verify_init_data)])
 async def api_refresh_avatars():
     """Скачать недостающие аватарки для всех чатов и аккаунтов"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     
     # Собираем все user_id которым нужны аватары
@@ -720,7 +803,7 @@ async def api_test_ai_create(request: Request):
         test_chats[chat_id]["messages"].append({"role": "assistant", "content": custom_first_msg})
     else:
         # ИИ пишет первым — как рабочий аккаунт пишет лиду
-        conn = sqlite3.connect(DB_FILE)
+        conn = connect_db()
         c = conn.cursor()
         c.execute('SELECT api_key, system_prompt, knowledge_base FROM ai_settings WHERE id = 1')
         ai_config = c.fetchone()
@@ -803,7 +886,7 @@ async def api_test_ai_trigger(chat_id: str):
 async def _trigger_test_ai(chat_id: str, chat: dict):
     """Общая логика: вызвать AI и обработать теги."""
     # Загружаем AI настройки из БД
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT api_key, system_prompt, knowledge_base FROM ai_settings WHERE id = 1')
     ai_config = c.fetchone()
@@ -899,7 +982,7 @@ async def _trigger_test_ai(chat_id: str, chat: dict):
 @app.get("/api/chats", dependencies=[Depends(verify_init_data)])
 async def api_get_chats():
     """Получить список всех чатов (лидов)"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('''
         SELECT c.chat_id, c.business_connection_id, c.lead_name, c.last_message_time, c.is_unread, c.is_high_priority,
@@ -947,7 +1030,7 @@ async def api_get_chats():
 @app.get("/api/messages/{chat_id}", dependencies=[Depends(verify_init_data)])
 async def api_get_messages(chat_id: int):
     """Получить историю сообщений для конкретного чата"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT id, text, is_outgoing, timestamp, media_type, media_url FROM messages WHERE chat_id = ? ORDER BY timestamp ASC', (chat_id,))
     rows = c.fetchall()
@@ -992,12 +1075,21 @@ async def delayed_send_to_telegram(chat_id: int, text: str, business_conn_id: st
                 business_connection_id=business_conn_id
             )
         except Exception as e:
-            # Откат: удаляем сообщение из базы, так как оно не было отправлено
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute("DELETE FROM messages WHERE chat_id = ? AND text = ? ORDER BY id DESC LIMIT 1", (chat_id, text))
-            conn.commit()
-            conn.close()
+            # Откат: удаляем ИМЕННО последнюю несохранённую строку по id
+            # (портируемый подзапрос вместо DELETE ... ORDER BY ... LIMIT,
+            # который не поддерживается частью сборок SQLite), с гарантией close.
+            conn = connect_db()
+            try:
+                c = conn.cursor()
+                c.execute(
+                    "DELETE FROM messages WHERE id = ("
+                    "SELECT id FROM messages WHERE chat_id = ? AND text = ? "
+                    "ORDER BY id DESC LIMIT 1)",
+                    (chat_id, text),
+                )
+                conn.commit()
+            finally:
+                conn.close()
             raise e
         
         # ОПЦИОНАЛЬНО: дублируем в Мастер-группу
@@ -1018,7 +1110,7 @@ async def api_send_message(chat_id: int, req: SendMessageRequest):
     """Отправить сообщение лиду прямо из веб-интерфейса"""
     try:
         # Пытаемся получить свежий business_connection_id для этого аккаунта
-        conn = sqlite3.connect(DB_FILE)
+        conn = connect_db()
         c = conn.cursor()
         c.execute("SELECT user_id FROM accounts WHERE business_connection_id = ?", (req.business_connection_id,))
         acc_row = c.fetchone()
@@ -1060,7 +1152,7 @@ async def api_send_message(chat_id: int, req: SendMessageRequest):
 async def api_upload_media(chat_id: int, business_connection_id: str = Form(...), file: UploadFile = File(...)):
     """Отправить медиафайл лиду"""
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = connect_db()
         c = conn.cursor()
         c.execute("SELECT user_id FROM accounts WHERE business_connection_id = ?", (business_connection_id,))
         acc_row = c.fetchone()
@@ -1084,6 +1176,9 @@ async def api_upload_media(chat_id: int, business_connection_id: str = Form(...)
         filepath = os.path.join("frontend/media", filename)
         
         content = await file.read()
+        if len(content) > MAX_UPLOAD_BYTES:
+            conn.close()
+            return JSONResponse({"status": "error", "message": "Файл слишком большой (макс 50 МБ)"}, status_code=413)
         with open(filepath, "wb") as f_out:
             f_out.write(content)
             
@@ -1134,7 +1229,7 @@ async def api_upload_media(chat_id: int, business_connection_id: str = Form(...)
 @app.post("/api/chats/{chat_id}/read", dependencies=[Depends(verify_init_data)])
 async def api_read_chat(chat_id: int):
     """Отметить чат как прочитанный"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('UPDATE chats SET is_unread = 0 WHERE chat_id = ?', (chat_id,))
     conn.commit()
@@ -1144,7 +1239,7 @@ async def api_read_chat(chat_id: int):
 @app.post("/api/chats/{chat_id}/unread", dependencies=[Depends(verify_init_data)])
 async def api_unread_chat(chat_id: int):
     """Сбросить статус прочтения (Невидимка) - пометить чат как непрочитанный"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('UPDATE chats SET is_unread = 1 WHERE chat_id = ?', (chat_id,))
     conn.commit()
@@ -1154,7 +1249,7 @@ async def api_unread_chat(chat_id: int):
 @app.post("/api/chats/{chat_id}/priority", dependencies=[Depends(verify_init_data)])
 async def api_priority_chat(chat_id: int):
     """Переключить метку High Priority для чата"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('UPDATE chats SET is_high_priority = NOT is_high_priority WHERE chat_id = ?', (chat_id,))
     c.execute('SELECT is_high_priority FROM chats WHERE chat_id = ?', (chat_id,))
@@ -1168,7 +1263,7 @@ async def api_priority_chat(chat_id: int):
 @app.post("/api/accounts/{account_id}/toggle_ai", dependencies=[Depends(verify_init_data)])
 async def api_toggle_account_ai(account_id: str):
     """Включить/выключить ИИ для конкретного аккаунта"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('UPDATE accounts SET ai_enabled = NOT ai_enabled WHERE business_connection_id = ?', (account_id,))
     c.execute('SELECT ai_enabled FROM accounts WHERE business_connection_id = ?', (account_id,))
@@ -1184,7 +1279,7 @@ async def api_toggle_account_ai(account_id: str):
 @app.post("/api/chats/{chat_id}/resume_ai", dependencies=[Depends(verify_init_data)])
 async def api_resume_chat_ai(chat_id: int):
     """Снять чат с паузы ИИ (разрешить ИИ снова отвечать)"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('UPDATE chats SET ai_paused = 0 WHERE chat_id = ?', (chat_id,))
     conn.commit()
@@ -1194,7 +1289,7 @@ async def api_resume_chat_ai(chat_id: int):
 @app.post("/api/chats/{chat_id}/force_ai", dependencies=[Depends(verify_init_data)])
 async def api_force_chat_ai(chat_id: int):
     """Принудительно заставить ИИ ответить в диалоге"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     # Снимем чат с паузы, если он был
     c.execute('UPDATE chats SET ai_paused = 0 WHERE chat_id = ?', (chat_id,))
@@ -1220,7 +1315,7 @@ async def api_force_chat_ai(chat_id: int):
 @app.post("/api/chats/{chat_id}/generate_ai", dependencies=[Depends(verify_init_data)])
 async def api_generate_ai_text(chat_id: int):
     """Сгенерировать текст ИИ и вернуть его (без отправки в Telegram)"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     
     c.execute('SELECT business_connection_id, lead_name FROM chats WHERE chat_id = ?', (chat_id,))
@@ -1241,7 +1336,7 @@ async def api_generate_ai_text(chat_id: int):
     knowledge_base = ai_config[2] if ai_config else ""
     
     # Получаем имя бизнес-аккаунта
-    conn2 = sqlite3.connect(DB_FILE)
+    conn2 = connect_db()
     c2 = conn2.cursor()
     c2.execute("SELECT business_name FROM accounts WHERE business_connection_id = ?", (conn_id,))
     biz_row = c2.fetchone()
@@ -1263,7 +1358,7 @@ async def api_generate_ai_text(chat_id: int):
 @app.post("/api/chats/{chat_id}/toggle_ai", dependencies=[Depends(verify_init_data)])
 async def api_toggle_chat_ai(chat_id: int):
     """(Пользовательское) Включить/выключить ИИ для конкретного чата (переключает ai_paused)"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('UPDATE chats SET ai_paused = CASE WHEN ai_paused = 1 THEN 0 ELSE 1 END WHERE chat_id = ?', (chat_id,))
     c.execute('SELECT ai_paused FROM chats WHERE chat_id = ?', (chat_id,))
@@ -1275,7 +1370,7 @@ async def api_toggle_chat_ai(chat_id: int):
 @app.get("/api/ai_settings", dependencies=[Depends(verify_init_data)])
 async def api_get_ai_settings():
     """Получить глобальные настройки ИИ"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT api_key, system_prompt, knowledge_base, read_delay, typing_delay FROM ai_settings WHERE id = 1')
     row = c.fetchone()
@@ -1301,7 +1396,7 @@ class AISettingsRequest(BaseModel):
 @app.post("/api/ai_settings", dependencies=[Depends(verify_init_data)])
 async def api_update_ai_settings(req: AISettingsRequest):
     """Обновить глобальные настройки ИИ"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('''
         UPDATE ai_settings 
@@ -1345,7 +1440,7 @@ async def api_verify_ai_key(req: VerifyKeyRequest):
 @app.get("/api/operators", dependencies=[Depends(verify_init_data)])
 async def api_get_operators():
     """Получить список всех операторов"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT id, identity, is_super FROM operators')
     ops = [{"id": row[0], "identity": row[1], "is_super": bool(row[2])} for row in c.fetchall()]
@@ -1368,7 +1463,7 @@ async def api_add_operator(req: OperatorRequest):
         
     identity = identity.lower() if identity.startswith("@") else identity
     
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     try:
         c.execute('INSERT INTO operators (identity) VALUES (?)', (identity,))
@@ -1381,7 +1476,7 @@ async def api_add_operator(req: OperatorRequest):
 @app.delete("/api/operators/{op_id}", dependencies=[Depends(verify_init_data)])
 async def api_delete_operator(op_id: int):
     """Удалить оператора по ID в БД"""
-    conn = sqlite3.connect(DB_FILE)
+    conn = connect_db()
     c = conn.cursor()
     c.execute('SELECT is_super FROM operators WHERE id = ?', (op_id,))
     row = c.fetchone()
@@ -1413,7 +1508,8 @@ async def main():
                 await bot.set_webhook(
                     url=WEBHOOK_URL,
                     allowed_updates=ALLOWED_UPDATES,
-                    drop_pending_updates=False
+                    drop_pending_updates=False,
+                    secret_token=WEBHOOK_SECRET
                 )
                 info = await bot.get_webhook_info()
                 logger.info(f"Webhook установлен: {info.url}, allowed_updates={info.allowed_updates}")
@@ -1428,7 +1524,9 @@ async def main():
     asyncio.create_task(setup_webhook())
     
     # 2. Настраиваем и запускаем FastAPI (Uvicorn) — стартует СРАЗУ
-    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="info")
+    # host=0.0.0.0 обязателен в Docker: 127.0.0.1 внутри контейнера недостижим
+    # снаружи (изоляцию порта делаем публикацией на loopback ХОСТА в compose).
+    config = uvicorn.Config(app, host=os.getenv("HOST", "0.0.0.0"), port=8000, log_level="info")
     server = uvicorn.Server(config)
     
     await server.serve()
