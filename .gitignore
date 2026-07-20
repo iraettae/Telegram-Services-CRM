@@ -28,11 +28,17 @@ ENV/
 # Env variables
 .env
 .env.save
+ai-providers.env
+!ai-providers.env.example
 
 # Databases
 *.sqlite3
 *.db
 crm_bot/crm_data.db
+
+# Telegram-сессии: файл .session — это готовый доступ к аккаунту без пароля и 2FA.
+*.session
+*.session-journal
 
 # Media and User Data
 crm_bot/frontend/avatars/*
@@ -52,4 +58,6 @@ logs/
 backups/
 
 # Sensitive info
+# Прокси-листы идут с логином/паролем, поэтому по имени, а не по пути.
+proxies.json
 tg_combiner/proxies.json

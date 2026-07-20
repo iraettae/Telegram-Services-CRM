@@ -1,27 +1,70 @@
-#!/home/user1/tg_combiner/venv/bin/python3
+#!/usr/bin/env python3
 """Import missing dialogs from Pyrogram session into CRM database."""
 import asyncio
+import json
 import sqlite3
 import os
 import sys
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from dotenv import load_dotenv
 from pyrogram import Client
 from pyrogram.enums import ChatType
 
-# Configuration
-API_ID = REDACTED_API_ID
-API_HASH = "REDACTED_API_HASH"
-SESSION_NAME = "REDACTED_PHONE"
-WORKDIR = "/home/user1/tg_combiner/sessions"
-DB_PATH = "/home/user1/crm_bot/crm_data.db"
+BASE_DIR = Path(__file__).resolve().parent
+ENV_FILE = BASE_DIR / ".env"
+load_dotenv(ENV_FILE)
 
-# Known accounts mapping
-BC_IDS = {
-    7386491223: "REDACTED_BC_ID", # Dima
-    7374691980: "hzxF9F_sOUlvGQAAzm6ziNC50Bw", # Lamar4ik
-}
+# ── Конфигурация ───────────────────────────────────────────────────────
+# Всё берём из .env: раньше здесь лежали живые api_id/api_hash, имя сессии
+# (это номер телефона аккаунта) и business_connection_id рабочих учёток —
+# и вместе с файлом уехали в публичный репозиторий.
+API_ID = (os.getenv("USERBOT_API_ID") or "").strip()
+API_HASH = (os.getenv("USERBOT_API_HASH") or "").strip()
+SESSION_NAME = (os.getenv("USERBOT_SESSION") or "").strip()
+WORKDIR = (os.getenv("USERBOT_SESSIONS_DIR") or "").strip()
+DB_PATH = os.getenv("DB_PATH", "crm_data.db")
+
+# {telegram_user_id: business_connection_id} в виде JSON — какому аккаунту
+# приписывать импортированные чаты.
+BC_IDS_RAW = (os.getenv("USERBOT_BC_IDS") or "").strip()
+
+
+def _load_config():
+    """Проверяем окружение ДО коннекта: скрипт разовый и пишет прямо в боевую
+    БД — пустой api_id или чужой bc_id тут дороже, чем отказ запуститься."""
+    missing = [
+        name for name, value in (
+            ("USERBOT_API_ID", API_ID),
+            ("USERBOT_API_HASH", API_HASH),
+            ("USERBOT_SESSION", SESSION_NAME),
+            ("USERBOT_SESSIONS_DIR", WORKDIR),
+            ("USERBOT_BC_IDS", BC_IDS_RAW),
+        ) if not value
+    ]
+    if missing:
+        raise SystemExit(
+            f"import_dialogs: не заданы {', '.join(missing)} в {ENV_FILE} "
+            "(см. .env.example)"
+        )
+    try:
+        api_id = int(API_ID)
+    except ValueError:
+        raise SystemExit(f"import_dialogs: USERBOT_API_ID должен быть числом, а не {API_ID!r}")
+    try:
+        bc_ids = {int(k): str(v) for k, v in json.loads(BC_IDS_RAW).items()}
+    except (ValueError, AttributeError) as e:
+        raise SystemExit(
+            f"import_dialogs: USERBOT_BC_IDS должен быть JSON вида "
+            f'{{"123456789": "business_connection_id"}} ({e})'
+        )
+    if not bc_ids:
+        raise SystemExit("import_dialogs: USERBOT_BC_IDS пуст — не к чему привязать чаты")
+    return api_id, bc_ids
+
 
 async def main():
+    API_ID, BC_IDS = _load_config()
     print("Connecting to Pyrogram session...")
     app = Client(SESSION_NAME, api_id=API_ID, api_hash=API_HASH, workdir=WORKDIR)
     

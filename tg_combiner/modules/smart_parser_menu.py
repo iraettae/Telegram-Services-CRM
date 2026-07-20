@@ -3,6 +3,7 @@ tg_combiner — Smart AI-Parser menu handlers.
 Registers inline keyboard + FSM states for configuring and running SmartParser.
 """
 
+import os
 import asyncio
 import functools
 import logging
@@ -35,7 +36,7 @@ def _get_config(uid: int) -> dict:
     d.setdefault("city", "")
     d.setdefault("strict_location", True)
     d.setdefault("require_experience", False)
-    d.setdefault("gemini_key", "REDACTED_ONLYSQ_KEY")
+    d.setdefault("gemini_key", os.getenv("ONLYSQ_API_KEY", ""))
     d.setdefault("chat", "")
     d.setdefault("selected_session", "")
     return d

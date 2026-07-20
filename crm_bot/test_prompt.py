@@ -1,8 +1,12 @@
 import asyncio
+import os
 from openai import AsyncOpenAI
 
 async def main():
-    api_key = "REDACTED_ONLYSQ_KEY"
+    # Ключ только из окружения: раньше он был вписан прямо сюда и утёк в репозиторий.
+    api_key = os.getenv("ONLYSQ_API_KEY", "").strip()
+    if not api_key:
+        raise SystemExit("test_prompt: не задан ONLYSQ_API_KEY (см. crm_bot/.env.example)")
     prompt = """Ты — рекрутер, занимаешься наймом курьеров. Твоя главная цель — заинтересовать человека, ответить на базовые вопросы и переманить его работать к нам в сервис из других доставок.
 
 ТВОЙ СТИЛЬ ОБЩЕНИЯ (КРИТИЧЕСКИ ВАЖНО):
